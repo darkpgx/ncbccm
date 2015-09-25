@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"> 
+
+    <title></title>
+    <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap-theme.min.css">
+    <link rel="stylesheet" href="/css/fonts.css">
+    <link rel="stylesheet" href="/css/application.css">
+
+    <!--[if gte IE 9]>
+      <style type="text/css">
+        .gradient {
+           filter: none;
+        }
+
+        .subMenuAll {
+          bottom: -70px;
+        }
+      </style>
+    <![endif]-->
+
+    <!-- older ie browsers for react and jquery -->
+    <script src="/vendor/shim/es5-shim.js"></script>
+    <script src="/vendor/shim/es5-sham.js"></script>
+    <!-- end-->
+
+    <script src="/vendor/jquery-1.11.2.min.js"></script>
+    <script src="/vendor/bootstrap/js/bootstrap.min.js"></script>
+
+    <script type="text/javascript">
+      if(!window.console) {
+        window.console = {
+          log : function(){},
+          warn : function(){},
+          error : function(){},
+          time : function(){},
+          timeEnd : function(){}
+        }
+      }
+
+      window.browser = {
+        isIe: function () {
+          return navigator.appVersion.indexOf("MSIE") != -1;
+        },
+        navigator: navigator.appVersion,
+        getVersion: function() {
+          var version = 999; // we assume a sane browser
+          if (navigator.appVersion.indexOf("MSIE") != -1)
+            return parseFloat(navigator.appVersion.split("MSIE")[1]);
+          }
+      };
+
+    </script>
+  </head>
+<body>
+
+  <script src="/vendor/jquery-cookie.js"></script>
+
+  <%-body%>
+
+</html>

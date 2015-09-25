@@ -1,0 +1,41 @@
+@mixin border-radius($radius) {
+  -webkit-border-radius: $radius;
+     -moz-border-radius: $radius;
+      -ms-border-radius: $radius;
+          border-radius: $radius;
+}
+
+@mixin top-border-radius($radius) {
+  -webkit-border-top-left-radius: $radius;
+	-webkit-border-top-right-radius: $radius;
+    -moz-border-top-left-radius: $radius;
+		-moz-border-top-right-radius: $radius;
+    	-ms-border-top-left-radius: $radius;
+			-ms-border-top-right-radius: $radius;
+          border-top-left-radius: $radius;
+					border-top-right-radius: $radius;
+}
+
+@mixin bottom-border-radius($radius) {
+  -webkit-border-bottom-left-radius: $radius;
+	-webkit-border-bottom-right-radius: $radius;
+    -moz-border-bottom-left-radius: $radius;
+		-moz-border-bottom-right-radius: $radius;
+    	-ms-border-bottom-left-radius: $radius;
+			-ms-border-bottom-right-radius: $radius;
+          border-bottom-left-radius: $radius;
+					border-bottom-right-radius: $radius;
+}
+
+@mixin linear-gradient($fromColor, $toColor) {
+	/* IE9 SVG, needs conditional override of 'filter' to 'none' */
+  background-color: $toColor; /* Fallback Color */
+  background-image: -webkit-gradient(linear, left top, left bottom, from($fromColor), to($toColor)); /* Saf4+, Chrome */
+  background-image: -webkit-linear-gradient(top, $fromColor, $toColor); /* Chrome 10+, Saf5.1+, iOS 5+ */
+  background-image:    -moz-linear-gradient(top, $fromColor, $toColor); /* FF3.6 */
+  background-image:     -ms-linear-gradient(top, $fromColor, $toColor); /* IE10 */
+  background-image:      -o-linear-gradient(top, $fromColor, $toColor); /* Opera 11.10+ */
+  background-image:         linear-gradient(top, $fromColor, $toColor);
+  filter: progid:DXImageTransform.Microsoft.gradient(GradientType=0,StartColorStr='#{$fromColor}', EndColorStr='#{$toColor}');
+}
+

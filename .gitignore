@@ -1,0 +1,9 @@
+node_modules/**
+.sass-cache
+.sass-cache/*
+uploads/**
+src/compiled/**
+public/css/**
+public/js/**
+log/**
+spec/selenium-server-standalone-2.45.0.jar
