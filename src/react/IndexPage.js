@@ -1,5 +1,4 @@
 var React = require('react');
-var Griddle = require('griddle-react');
 
 import {GeneralAdapter} from '../js/adapters/General';
 import {GeneralStore} from '../js/appStores/General';
@@ -26,7 +25,7 @@ var PageContainer = React.createClass({
   },
   render: function(){
     return(
-      <Griddle results={this.state.data} />
+      <h1>Hello world</h1>
     )
   }
 });
