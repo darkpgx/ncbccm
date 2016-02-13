@@ -1,15 +1,15 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 'use strict';
 
-var _IndexPage = require('../react/IndexPage.js');
-
-var _reactRouter = require('react-router');
-
-var _reactDom = require('react-dom');
-
 var _react = require('react');
 
 var _react2 = _interopRequireDefault(_react);
+
+var _reactDom = require('react-dom');
+
+var _reactRouter = require('react-router');
+
+var _IndexPage = require('../react/IndexPage.js');
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -19,23 +19,11 @@ import {ResourceIndex} from '../react/resources/Index.js';
 */
 
 
-var App = _react2.default.createClass({
-  displayName: 'App',
-  render: function render() {
-    return _react2.default.createElement(
-      'div',
-      null,
-      _react2.default.createElement(
-        'h1',
-        null,
-        'Be nice to your own mum'
-      ),
-      this.props.children
-    );
-  }
-});
-
-(0, _reactDom.render)(_react2.default.createElement(App, null), document.getElementById('reactContainer'));
+(0, _reactDom.render)(_react2.default.createElement(
+  _reactRouter.Router,
+  { history: _reactRouter.hashHistory },
+  _react2.default.createElement(_reactRouter.Route, { path: '/', component: _IndexPage.IndexPage })
+), document.getElementById('reactContainer'));
 
 
 },{"../react/IndexPage.js":227,"react":221,"react-dom":8,"react-router":36}],2:[function(require,module,exports){
@@ -26293,15 +26281,19 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.IndexPage = undefined;
 
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
 var _General = require('../js/adapters/General');
 
 var _General2 = require('../js/appStores/General');
 
 var _General3 = require('../js/constants/General');
 
-var React = require('react');
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-var PageContainer = React.createClass({
+var PageContainer = _react2.default.createClass({
   displayName: 'PageContainer',
 
   getInitialState: function getInitialState() {
@@ -26323,16 +26315,16 @@ var PageContainer = React.createClass({
     this.setState(this.setDataState());
   },
   render: function render() {
-    return React.createElement(
+    return _react2.default.createElement(
       'div',
       null,
-      React.createElement(
+      _react2.default.createElement(
         'h1',
         null,
         'Welcome to Website Prankster'
       ),
       'What is your boss name? ',
-      React.createElement('input', { type: 'text', ref: 'domainInput' })
+      _react2.default.createElement('input', { type: 'text', ref: 'domainInput' })
     );
   }
 });

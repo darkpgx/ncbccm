@@ -1,5 +1,4 @@
-var React = require('react');
-
+import React from 'react'
 import {GeneralAdapter} from '../js/adapters/General';
 import {GeneralStore} from '../js/appStores/General';
 import {EVENTS} from '../js/constants/General';
