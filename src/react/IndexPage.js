@@ -25,7 +25,10 @@ var PageContainer = React.createClass({
   },
   render: function(){
     return(
-      <h1>Hello world</h1>
+      <div>
+      <h1>Welcome to Website Prankster</h1>
+      What is your boss name? <input type="text" ref="domainInput"></input>
+      </div>
     )
   }
 });
