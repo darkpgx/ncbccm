@@ -27,6 +27,7 @@ var opts = assign({}, watchify.args, customOpts);
 var b = watchify(browserify(opts));
 
 b.transform(babelify.configure({
+  presets: ["es2015", "react"],
   compact: false
 }));
 

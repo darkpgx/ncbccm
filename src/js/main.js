@@ -11,7 +11,7 @@ const App = React.createClass({
   render() {
     return (
       <div> 
-        <h1> hello world </h1>
+        <h1>Be nice to your own mum</h1>
         {this.props.children}
       </div>
     )
