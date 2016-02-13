@@ -5,11 +5,10 @@
 * Install all system requirements before "Run"
 
 # Run
-Simply type `npm run watch`. This will run node server, grunt sass, and browserify and watch file changes  
+Simply type `gulp`. This will run node server, grunt sass, and browserify and watch file changes  
 
 # System requirements
-* Install node v0.10
-* Install ruby version 2+
+* Install node v4+
 * npm install -g browserify
 * npm install -g watchify
 * npm install -g grunt-cli
