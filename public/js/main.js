@@ -26,7 +26,7 @@ import {ResourceIndex} from '../react/resources/Index.js';
 ), document.getElementById('reactContainer'));
 
 
-},{"../react/IndexPage.js":227,"react":221,"react-dom":8,"react-router":36}],2:[function(require,module,exports){
+},{"../react/IndexPage.js":279,"react":273,"react-dom":81,"react-router":109}],2:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -391,6 +391,6517 @@ process.umask = function() { return 0; };
 
 },{}],4:[function(require,module,exports){
 /**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule BrowserSupportCore
+ */
+
+'use strict';
+
+var getVendorPrefixedName = require('./getVendorPrefixedName');
+
+var BrowserSupportCore = {
+  /**
+   * @return {bool} True if browser supports css animations.
+   */
+  hasCSSAnimations: function hasCSSAnimations() {
+    return !!getVendorPrefixedName('animationName');
+  },
+
+  /**
+   * @return {bool} True if browser supports css transforms.
+   */
+  hasCSSTransforms: function hasCSSTransforms() {
+    return !!getVendorPrefixedName('transform');
+  },
+
+  /**
+   * @return {bool} True if browser supports css 3d transforms.
+   */
+  hasCSS3DTransforms: function hasCSS3DTransforms() {
+    return !!getVendorPrefixedName('perspective');
+  },
+
+  /**
+   * @return {bool} True if browser supports css transitions.
+   */
+  hasCSSTransitions: function hasCSSTransitions() {
+    return !!getVendorPrefixedName('transition');
+  } };
+
+module.exports = BrowserSupportCore;
+},{"./getVendorPrefixedName":44}],5:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * This class listens to events on the document and then updates a react
+ * component through callbacks.
+ * Please note that captureMouseMove must be called in
+ * order to initialize listeners on mousemove and mouseup.
+ * releaseMouseMove must be called to remove them. It is important to
+ * call releaseMouseMoves since mousemove is expensive to listen to.
+ *
+ * @providesModule DOMMouseMoveTracker
+ * @typechecks
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+var EventListener = require('./EventListener');
+
+var cancelAnimationFramePolyfill = require('./cancelAnimationFramePolyfill');
+var requestAnimationFramePolyfill = require('./requestAnimationFramePolyfill');
+
+var DOMMouseMoveTracker = (function () {
+  /**
+   * onMove is the callback that will be called on every mouse move.
+   * onMoveEnd is called on mouse up when movement has ended.
+   */
+
+  function DOMMouseMoveTracker(
+  /*function*/onMove,
+  /*function*/onMoveEnd,
+  /*DOMElement*/domNode) {
+    _classCallCheck(this, DOMMouseMoveTracker);
+
+    this._isDragging = false;
+    this._animationFrameID = null;
+    this._domNode = domNode;
+    this._onMove = onMove;
+    this._onMoveEnd = onMoveEnd;
+    this._onMouseMove = this._onMouseMove.bind(this);
+    this._onMouseUp = this._onMouseUp.bind(this);
+    this._didMouseMove = this._didMouseMove.bind(this);
+  }
+
+  _createClass(DOMMouseMoveTracker, [{
+    key: 'captureMouseMoves',
+
+    /**
+     * This is to set up the listeners for listening to mouse move
+     * and mouse up signaling the movement has ended. Please note that these
+     * listeners are added at the document.body level. It takes in an event
+     * in order to grab inital state.
+     */
+    value: function captureMouseMoves( /*object*/event) {
+      if (!this._eventMoveToken && !this._eventUpToken) {
+        this._eventMoveToken = EventListener.listen(this._domNode, 'mousemove', this._onMouseMove);
+        this._eventUpToken = EventListener.listen(this._domNode, 'mouseup', this._onMouseUp);
+      }
+
+      if (!this._isDragging) {
+        this._deltaX = 0;
+        this._deltaY = 0;
+        this._isDragging = true;
+        this._x = event.clientX;
+        this._y = event.clientY;
+      }
+      event.preventDefault();
+    }
+  }, {
+    key: 'releaseMouseMoves',
+
+    /**
+     * These releases all of the listeners on document.body.
+     */
+    value: function releaseMouseMoves() {
+      if (this._eventMoveToken && this._eventUpToken) {
+        this._eventMoveToken.remove();
+        this._eventMoveToken = null;
+        this._eventUpToken.remove();
+        this._eventUpToken = null;
+      }
+
+      if (this._animationFrameID !== null) {
+        cancelAnimationFramePolyfill(this._animationFrameID);
+        this._animationFrameID = null;
+      }
+
+      if (this._isDragging) {
+        this._isDragging = false;
+        this._x = null;
+        this._y = null;
+      }
+    }
+  }, {
+    key: 'isDragging',
+
+    /**
+     * Returns whether or not if the mouse movement is being tracked.
+     */
+    value: function isDragging() /*boolean*/{
+      return this._isDragging;
+    }
+  }, {
+    key: '_onMouseMove',
+
+    /**
+     * Calls onMove passed into constructor and updates internal state.
+     */
+    value: function _onMouseMove( /*object*/event) {
+      var x = event.clientX;
+      var y = event.clientY;
+
+      this._deltaX += x - this._x;
+      this._deltaY += y - this._y;
+
+      if (this._animationFrameID === null) {
+        // The mouse may move faster then the animation frame does.
+        // Use `requestAnimationFramePolyfill` to avoid over-updating.
+        this._animationFrameID = requestAnimationFramePolyfill(this._didMouseMove);
+      }
+
+      this._x = x;
+      this._y = y;
+      event.preventDefault();
+    }
+  }, {
+    key: '_didMouseMove',
+    value: function _didMouseMove() {
+      this._animationFrameID = null;
+      this._onMove(this._deltaX, this._deltaY);
+      this._deltaX = 0;
+      this._deltaY = 0;
+    }
+  }, {
+    key: '_onMouseUp',
+
+    /**
+     * Calls onMoveEnd passed into constructor and updates internal state.
+     */
+    value: function _onMouseUp() {
+      if (this._animationFrameID) {
+        this._didMouseMove();
+      }
+      this._onMoveEnd();
+    }
+  }]);
+
+  return DOMMouseMoveTracker;
+})();
+
+module.exports = DOMMouseMoveTracker;
+},{"./EventListener":6,"./cancelAnimationFramePolyfill":38,"./requestAnimationFramePolyfill":50}],6:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule EventListener
+ * @typechecks
+ */
+
+'use strict';
+
+var emptyFunction = require('./emptyFunction');
+
+/**
+ * Upstream version of event listener. Does not take into account specific
+ * nature of platform.
+ */
+var EventListener = {
+  /**
+   * Listen to DOM events during the bubble phase.
+   *
+   * @param {DOMEventTarget} target DOM element to register listener on.
+   * @param {string} eventType Event type, e.g. 'click' or 'mouseover'.
+   * @param {function} callback Callback function.
+   * @return {object} Object with a `remove` method.
+   */
+  listen: function listen(target, eventType, callback) {
+    if (target.addEventListener) {
+      target.addEventListener(eventType, callback, false);
+      return {
+        remove: function remove() {
+          target.removeEventListener(eventType, callback, false);
+        }
+      };
+    } else if (target.attachEvent) {
+      target.attachEvent('on' + eventType, callback);
+      return {
+        remove: function remove() {
+          target.detachEvent('on' + eventType, callback);
+        }
+      };
+    }
+  },
+
+  /**
+   * Listen to DOM events during the capture phase.
+   *
+   * @param {DOMEventTarget} target DOM element to register listener on.
+   * @param {string} eventType Event type, e.g. 'click' or 'mouseover'.
+   * @param {function} callback Callback function.
+   * @return {object} Object with a `remove` method.
+   */
+  capture: function capture(target, eventType, callback) {
+    if (target.addEventListener) {
+      target.addEventListener(eventType, callback, true);
+      return {
+        remove: function remove() {
+          target.removeEventListener(eventType, callback, true);
+        }
+      };
+    } else {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('Attempted to listen to events during the capture phase on a ' + 'browser that does not support the capture phase. Your application ' + 'will not receive some events.');
+      }
+      return {
+        remove: emptyFunction
+      };
+    }
+  },
+
+  registerDefault: function registerDefault() {}
+};
+
+module.exports = EventListener;
+}).call(this,require('_process'))
+
+},{"./emptyFunction":43,"_process":3}],7:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule ExecutionEnvironment
+ */
+
+/*jslint evil: true */
+
+'use strict';
+
+var canUseDOM = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
+
+/**
+ * Simple, lightweight module assisting with the detection and context of
+ * Worker. Helps avoid circular dependencies and allows code to reason about
+ * whether or not they are in a Worker, even if they never include the main
+ * `ReactWorker` dependency.
+ */
+var ExecutionEnvironment = {
+
+  canUseDOM: canUseDOM,
+
+  canUseWorkers: typeof Worker !== 'undefined',
+
+  canUseEventListeners: canUseDOM && !!(window.addEventListener || window.attachEvent),
+
+  canUseViewport: canUseDOM && !!window.screen,
+
+  isInWorker: !canUseDOM // For now, this is true - might change in the future.
+
+};
+
+module.exports = ExecutionEnvironment;
+},{}],8:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTable.react
+ */
+
+/**
+ * TRANSITION SHIM
+ * This acts to provide an intermediate mapping from the old API to the new API
+ *
+ * Remove this entire file and replace the two lines in FixedDataTableRoot
+ * when ready to continue to the new API.
+ */
+
+'use strict';
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var React = require('./React');
+
+var ReactChildren = React.Children;
+
+var PropTypes = React.PropTypes;
+
+// New Table API
+var Table = require('./FixedDataTableNew.react');
+var Column = require('./FixedDataTableColumnNew.react');
+var ColumnGroup = require('./FixedDataTableColumnGroupNew.react');
+
+// Transition Cell
+var TransitionCell = require('./FixedDataTableCellTransition.react');
+
+var NEXT_VERSION = '0.7.0';
+var DOCUMENTATION_URL = 'https://fburl.com/FixedDataTable-v0.6';
+
+var EMPTY_OBJECT = {};
+
+/**
+ * Notify in console that some prop has been deprecated.
+ */
+var notified = {};
+function notifyDeprecated(prop, reason) {
+  if (process.env.NODE_ENV !== 'production') {
+    if (!notified[prop]) {
+      console.warn('`' + prop + '` will be DEPRECATED in version ' + NEXT_VERSION + ' of FixedDataTable and beyond. \n' + reason + '\n' + 'Read the docs at: ' + DOCUMENTATION_URL);
+      notified[prop] = true;
+    }
+  }
+}
+
+/**
+ * Data grid component with fixed or scrollable header and columns.
+ *
+ * This is currently in a transition mode, as the new API is used.
+ * DEPRECATED endpoints work, but will not be supported in later versions.
+ *
+ * The layout of the data table is as follows:
+ *
+ * ```
+ * +---------------------------------------------------+
+ * | Fixed Column Group    | Scrollable Column Group   |
+ * | Header                | Header                    |
+ * |                       |                           |
+ * +---------------------------------------------------+
+ * |                       |                           |
+ * | Fixed Header Columns  | Scrollable Header Columns |
+ * |                       |                           |
+ * +-----------------------+---------------------------+
+ * |                       |                           |
+ * | Fixed Body Columns    | Scrollable Body Columns   |
+ * |                       |                           |
+ * +-----------------------+---------------------------+
+ * |                       |                           |
+ * | Fixed Footer Columns  | Scrollable Footer Columns |
+ * |                       |                           |
+ * +-----------------------+---------------------------+
+ * ```
+ *
+ * - Fixed Column Group Header: These are the headers for a group
+ *   of columns if included in the table that do not scroll
+ *   vertically or horizontally.
+ *
+ * - Scrollable Column Group Header: The header for a group of columns
+ *   that do not move while scrolling vertically, but move horizontally
+ *   with the horizontal scrolling.
+ *
+ * - Fixed Header Columns: The header columns that do not move while scrolling
+ *   vertically or horizontally.
+ *
+ * - Scrollable Header Columns: The header columns that do not move
+ *   while scrolling vertically, but move horizontally with the horizontal
+ *   scrolling.
+ *
+ * - Fixed Body Columns: The body columns that do not move while scrolling
+ *   horizontally, but move vertically with the vertical scrolling.
+ *
+ * - Scrollable Body Columns: The body columns that move while scrolling
+ *   vertically or horizontally.
+ */
+var TransitionTable = React.createClass({
+  displayName: 'TransitionTable',
+
+  propTypes: {
+    /**
+     * Pixel width of table. If all columns do not fit,
+     * a horizontal scrollbar will appear.
+     */
+    width: PropTypes.number.isRequired,
+
+    /**
+     * Pixel height of table. If all rows do not fit,
+     * a vertical scrollbar will appear.
+     *
+     * Either `height` or `maxHeight` must be specified.
+     */
+    height: PropTypes.number,
+
+    /**
+     * Maximum pixel height of table. If all rows do not fit,
+     * a vertical scrollbar will appear.
+     *
+     * Either `height` or `maxHeight` must be specified.
+     */
+    maxHeight: PropTypes.number,
+
+    /**
+     * Pixel height of table's owner, this is used in a managed scrolling
+     * situation when you want to slide the table up from below the fold
+     * without having to constantly update the height on every scroll tick.
+     * Instead, vary this property on scroll. By using `ownerHeight`, we
+     * over-render the table while making sure the footer and horizontal
+     * scrollbar of the table are visible when the current space for the table
+     * in view is smaller than the final, over-flowing height of table. It
+     * allows us to avoid resizing and reflowing table when it is moving in the
+     * view.
+     *
+     * This is used if `ownerHeight < height` (or `maxHeight`).
+     */
+    ownerHeight: PropTypes.number,
+
+    overflowX: PropTypes.oneOf(['hidden', 'auto']),
+    overflowY: PropTypes.oneOf(['hidden', 'auto']),
+
+    /**
+     * Number of rows in the table.
+     */
+    rowsCount: PropTypes.number.isRequired,
+
+    /**
+     * Pixel height of rows unless `rowHeightGetter` is specified and returns
+     * different value.
+     */
+    rowHeight: PropTypes.number.isRequired,
+
+    /**
+     * If specified, `rowHeightGetter(index)` is called for each row and the
+     * returned value overrides `rowHeight` for particular row.
+     */
+    rowHeightGetter: PropTypes.func,
+
+    /**
+     * DEPRECATED
+     *
+     * To get rows to display in table, `rowGetter(index)`
+     * is called. `rowGetter` should be smart enough to handle async
+     * fetching of data and return temporary objects
+     * while data is being fetched.
+     */
+    rowGetter: PropTypes.func,
+
+    /**
+     * To get any additional CSS classes that should be added to a row,
+     * `rowClassNameGetter(index)` is called.
+     */
+    rowClassNameGetter: PropTypes.func,
+
+    /**
+     * Pixel height of the column group header.
+     */
+    groupHeaderHeight: PropTypes.number,
+
+    /**
+     * Pixel height of header.
+     */
+    headerHeight: PropTypes.number.isRequired,
+
+    /**
+     * DEPRECATED
+     *
+     * Function that is called to get the data for the header row.
+     * If the function returns null, the header will be set to the
+     * Column's label property.
+     */
+    headerDataGetter: PropTypes.func,
+
+    /**
+     * Pixel height of footer.
+     */
+    footerHeight: PropTypes.number,
+
+    /**
+     * DEPRECATED - use footerDataGetter instead.
+     * Data that will be passed to footer cell renderers.
+     */
+    footerData: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
+
+    /**
+     * DEPRECATED
+     *
+     * Function that is called to get the data for the footer row.
+     */
+    footerDataGetter: PropTypes.func,
+
+    /**
+     * Value of horizontal scroll.
+     */
+    scrollLeft: PropTypes.number,
+
+    /**
+     * Index of column to scroll to.
+     */
+    scrollToColumn: PropTypes.number,
+
+    /**
+     * Value of vertical scroll.
+     */
+    scrollTop: PropTypes.number,
+
+    /**
+     * Index of row to scroll to.
+     */
+    scrollToRow: PropTypes.number,
+
+    /**
+     * Callback that is called when scrolling starts with current horizontal
+     * and vertical scroll values.
+     */
+    onScrollStart: PropTypes.func,
+
+    /**
+     * Callback that is called when scrolling ends or stops with new horizontal
+     * and vertical scroll values.
+     */
+    onScrollEnd: PropTypes.func,
+
+    /**
+     * Callback that is called when `rowHeightGetter` returns a different height
+     * for a row than the `rowHeight` prop. This is necessary because initially
+     * table estimates heights of some parts of the content.
+     */
+    onContentHeightChange: PropTypes.func,
+
+    /**
+     * Callback that is called when a row is clicked.
+     */
+    onRowClick: PropTypes.func,
+
+    /**
+     * Callback that is called when a row is double clicked.
+     */
+    onRowDoubleClick: PropTypes.func,
+
+    /**
+     * Callback that is called when a mouse-down event happens on a row.
+     */
+    onRowMouseDown: PropTypes.func,
+
+    /**
+     * Callback that is called when a mouse-enter event happens on a row.
+     */
+    onRowMouseEnter: PropTypes.func,
+
+    /**
+     * Callback that is called when a mouse-leave event happens on a row.
+     */
+    onRowMouseLeave: PropTypes.func,
+
+    /**
+     * Callback that is called when resizer has been released
+     * and column needs to be updated.
+     *
+     * Required if the isResizable property is true on any column.
+     *
+     * ```
+     * function(
+     *   newColumnWidth: number,
+     *   dataKey: string,
+     * )
+     * ```
+     */
+    onColumnResizeEndCallback: PropTypes.func,
+
+    /**
+     * Whether a column is currently being resized.
+     */
+    isColumnResizing: PropTypes.bool },
+
+  getInitialState: function getInitialState() {
+    // Throw warnings on deprecated props.
+    var state = {};
+    state.needsMigration = this._checkDeprecations();
+
+    return state;
+  },
+
+  _checkDeprecations: function _checkDeprecations() {
+    var needsMigration = false;
+
+    if (this.props.rowGetter) {
+      notifyDeprecated('rowGetter', 'Please use the cell API in Column to fetch data for your cells.');
+
+      // ROWGETTER??? You need to migrate.
+      needsMigration = true;
+    }
+
+    if (this.props.headerDataGetter) {
+      notifyDeprecated('headerDataGetter', 'Please use the header API in Column to ' + 'fetch data for your header cells.');
+    }
+
+    if (this.props.footerData) {
+      notifyDeprecated('footerData', 'Please use the footer API in Column to ' + 'fetch data for your footer cells.');
+    }
+
+    if (this.props.footerDataGetter) {
+      notifyDeprecated('footerDataGetter', 'Please use the footer API in Column to ' + 'fetch data for your footer cells.');
+    }
+
+    ReactChildren.forEach(this.props.children, function (child) {
+      if (!child || !child.props) {
+        return;
+      }
+
+      var props = child.props;
+
+      if (props.label) {
+        notifyDeprecated('label', 'Please use `header` instead.');
+      }
+
+      if (props.dataKey) {
+        notifyDeprecated('dataKey', 'Please use the `cell` API to pass in a dataKey');
+      }
+
+      if (props.cellRenderer) {
+        notifyDeprecated('cellRenderer', 'Please use the `cell` API to pass in a React Element instead.');
+      }
+
+      if (props.headerRenderer) {
+        notifyDeprecated('headerRenderer', 'Please use the `header` API to pass in a React Element instead.');
+      }
+
+      if (props.columnData) {
+        notifyDeprecated('columnData', 'Please pass data in through props to your header, cell or footer.');
+      }
+
+      if (props.groupHeaderRenderer) {
+        notifyDeprecated('groupHeaderRenderer', 'Please use the `header` API in ColumnGroup to ' + 'pass in a React Element instead of a function that creates one.');
+      }
+
+      if (props.groupHeaderData) {
+        notifyDeprecated('groupHeaderData', 'Please pass in any data through props to your header.');
+      }
+    });
+
+    return needsMigration;
+  },
+
+  // Wrapper for onRow callbacks, since we don't have rowData at that level.
+  _onRowAction: function _onRowAction(props, callback) {
+    if (!callback) {
+      return undefined;
+    }
+
+    return function (e, rowIndex) {
+      callback(e, rowIndex, props.rowGetter && props.rowGetter(rowIndex) || EMPTY_OBJECT);
+    };
+  },
+
+  _transformColumn: function _transformColumn(column, tableProps, key) {
+
+    var props = column.props;
+
+    if (column.type.__TableColumn__) {
+      // Constuct the cell to be used using the rowGetter
+      return React.createElement(Column, _extends({
+        key: 'column_' + key
+      }, props, {
+        header: React.createElement(TransitionCell, {
+          isHeaderCell: true,
+          label: props.label,
+          width: props.width,
+          dataKey: props.dataKey,
+          className: props.headerClassName,
+          columnData: props.columnData || EMPTY_OBJECT,
+          cellRenderer: props.headerRenderer,
+          headerDataGetter: tableProps.headerDataGetter
+        }),
+        columnKey: props.dataKey,
+        cell: React.createElement(TransitionCell, {
+          dataKey: props.dataKey,
+          className: props.cellClassName,
+          rowGetter: tableProps.rowGetter,
+          width: props.width,
+          columnData: props.columnData || EMPTY_OBJECT,
+          cellDataGetter: props.cellDataGetter,
+          cellRenderer: props.cellRenderer
+        }),
+        footer: React.createElement(TransitionCell, {
+          isFooterCell: true,
+          className: props.footerClassName,
+          dataKey: props.dataKey,
+          cellRenderer: props.footerRenderer,
+          footerDataGetter: tableProps.footerDataGetter,
+          footerData: tableProps.footerData || EMPTY_OBJECT
+        })
+      }));
+    }
+  },
+
+  _transformColumnGroup: function _transformColumnGroup(group, tableProps, key, labels) {
+    var _this = this;
+
+    var props = group.props;
+
+    var j = 0;
+    var columns = ReactChildren.map(props.children, function (child) {
+      j++;
+      return _this._transformColumn(child, tableProps, key + '_' + j);
+    });
+
+    return React.createElement(
+      ColumnGroup,
+      _extends({}, props, {
+        key: 'group_' + key,
+        header: React.createElement(TransitionCell, {
+          isHeaderCell: true,
+          label: group.props.label,
+          dataKey: key,
+          groupHeaderRenderer: props.groupHeaderRenderer,
+          groupHeaderLabels: labels,
+          groupHeaderData: props.columnGroupData || EMPTY_OBJECT
+        }) }),
+      columns
+    );
+  },
+
+  _convertedColumns: function _convertedColumns(needsMigration) {
+    var _this2 = this;
+
+    // If we don't need to migrate, map directly to the new API.
+    if (!needsMigration) {
+      return ReactChildren.map(this.props.children, function (child) {
+
+        if (!child) {
+          return null;
+        }
+
+        if (child.type.__TableColumn__) {
+          return React.createElement(Column, child.props);
+        }
+
+        if (child.type.__TableColumnGroup__) {
+          return React.createElement(ColumnGroup, child.props);
+        }
+      });
+    }
+
+    var tableProps = this.props;
+
+    // Otherwise, if a migration is needed, we need to transform each Column
+    // or ColumnGroup.
+    var i = 0;
+    return ReactChildren.map(this.props.children, function (child) {
+
+      if (!child) {
+        return null;
+      }
+
+      if (child.type.__TableColumn__) {
+        child = _this2._transformColumn(child, tableProps, i);
+      }
+
+      if (child.type.__TableColumnGroup__) {
+        // Since we apparently give an array of labels to groupHeaderRenderer
+        var labels = [];
+        ReactChildren.forEach(_this2.props.children, function (child) {
+          labels.push(child.props.label);
+        });
+
+        child = _this2._transformColumnGroup(child, tableProps, i, labels);
+      }
+
+      i++;
+      return child;
+    });
+  },
+
+  render: function render() {
+    var props = this.props;
+    return React.createElement(
+      Table,
+      _extends({}, props, {
+        onRowMouseDown: this._onRowAction(props, props.onRowMouseDown),
+        onRowClick: this._onRowAction(props, props.onRowClick),
+        onRowDoubleClick: this._onRowAction(props, props.onRowDoubleClick),
+        onRowMouseEnter: this._onRowAction(props, props.onRowMouseEnter),
+        onRowMouseLeave: this._onRowAction(props, props.onRowMouseLeave)
+      }),
+      this._convertedColumns(this.state.needsMigration)
+    );
+  } });
+
+module.exports = TransitionTable;
+}).call(this,require('_process'))
+
+},{"./FixedDataTableCellTransition.react":13,"./FixedDataTableColumnGroupNew.react":16,"./FixedDataTableColumnNew.react":17,"./FixedDataTableNew.react":20,"./React":31,"_process":3}],9:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableBufferedRows.react
+ * @typechecks
+ */
+
+'use strict';
+
+var React = require('./React');
+var FixedDataTableRowBuffer = require('./FixedDataTableRowBuffer');
+var FixedDataTableRow = require('./FixedDataTableRow.react');
+
+var cx = require('./cx');
+var emptyFunction = require('./emptyFunction');
+var joinClasses = require('./joinClasses');
+var translateDOMPositionXY = require('./translateDOMPositionXY');
+
+var PropTypes = React.PropTypes;
+
+var FixedDataTableBufferedRows = React.createClass({
+  displayName: 'FixedDataTableBufferedRows',
+
+  propTypes: {
+    isScrolling: PropTypes.bool,
+    defaultRowHeight: PropTypes.number.isRequired,
+    firstRowIndex: PropTypes.number.isRequired,
+    firstRowOffset: PropTypes.number.isRequired,
+    fixedColumns: PropTypes.array.isRequired,
+    height: PropTypes.number.isRequired,
+    offsetTop: PropTypes.number.isRequired,
+    onRowClick: PropTypes.func,
+    onRowDoubleClick: PropTypes.func,
+    onRowMouseDown: PropTypes.func,
+    onRowMouseEnter: PropTypes.func,
+    onRowMouseLeave: PropTypes.func,
+    rowClassNameGetter: PropTypes.func,
+    rowsCount: PropTypes.number.isRequired,
+    rowHeightGetter: PropTypes.func,
+    rowPositionGetter: PropTypes.func.isRequired,
+    scrollLeft: PropTypes.number.isRequired,
+    scrollableColumns: PropTypes.array.isRequired,
+    showLastRowBorder: PropTypes.bool,
+    width: PropTypes.number.isRequired },
+
+  getInitialState: function getInitialState() /*object*/{
+    this._rowBuffer = new FixedDataTableRowBuffer(this.props.rowsCount, this.props.defaultRowHeight, this.props.height, this._getRowHeight);
+    return {
+      rowsToRender: this._rowBuffer.getRows(this.props.firstRowIndex, this.props.firstRowOffset) };
+  },
+
+  componentWillMount: function componentWillMount() {
+    this._staticRowArray = [];
+  },
+
+  componentDidMount: function componentDidMount() {
+    setTimeout(this._updateBuffer, 1000);
+  },
+
+  componentWillReceiveProps: function componentWillReceiveProps( /*object*/nextProps) {
+    if (nextProps.rowsCount !== this.props.rowsCount || nextProps.defaultRowHeight !== this.props.defaultRowHeight || nextProps.height !== this.props.height) {
+      this._rowBuffer = new FixedDataTableRowBuffer(nextProps.rowsCount, nextProps.defaultRowHeight, nextProps.height, this._getRowHeight);
+    }
+    if (this.props.isScrolling && !nextProps.isScrolling) {
+      this._updateBuffer();
+    } else {
+      this.setState({
+        rowsToRender: this._rowBuffer.getRows(nextProps.firstRowIndex, nextProps.firstRowOffset) });
+    }
+  },
+
+  _updateBuffer: function _updateBuffer() {
+    if (this.isMounted()) {
+      this.setState({
+        rowsToRender: this._rowBuffer.getRowsWithUpdatedBuffer() });
+    }
+  },
+
+  shouldComponentUpdate: function shouldComponentUpdate() /*boolean*/{
+    // Don't add PureRenderMixin to this component please.
+    return true;
+  },
+
+  componentWillUnmount: function componentWillUnmount() {
+    this._staticRowArray.length = 0;
+  },
+
+  render: function render() /*object*/{
+    var props = this.props;
+    var rowClassNameGetter = props.rowClassNameGetter || emptyFunction;
+    var rowPositionGetter = props.rowPositionGetter;
+
+    var rowsToRender = this.state.rowsToRender;
+    this._staticRowArray.length = rowsToRender.length;
+
+    for (var i = 0; i < rowsToRender.length; ++i) {
+      var rowIndex = rowsToRender[i];
+      var currentRowHeight = this._getRowHeight(rowIndex);
+      var rowOffsetTop = rowPositionGetter(rowIndex);
+
+      var hasBottomBorder = rowIndex === props.rowsCount - 1 && props.showLastRowBorder;
+
+      this._staticRowArray[i] = React.createElement(FixedDataTableRow, {
+        key: i,
+        isScrolling: props.isScrolling,
+        index: rowIndex,
+        width: props.width,
+        height: currentRowHeight,
+        scrollLeft: Math.round(props.scrollLeft),
+        offsetTop: Math.round(rowOffsetTop),
+        fixedColumns: props.fixedColumns,
+        scrollableColumns: props.scrollableColumns,
+        onClick: props.onRowClick,
+        onDoubleClick: props.onRowDoubleClick,
+        onMouseDown: props.onRowMouseDown,
+        onMouseEnter: props.onRowMouseEnter,
+        onMouseLeave: props.onRowMouseLeave,
+        className: joinClasses(rowClassNameGetter(rowIndex), cx('public/fixedDataTable/bodyRow'), cx({
+          'fixedDataTableLayout/hasBottomBorder': hasBottomBorder,
+          'public/fixedDataTable/hasBottomBorder': hasBottomBorder }))
+      });
+    }
+
+    var firstRowPosition = props.rowPositionGetter(props.firstRowIndex);
+
+    var style = {
+      position: 'absolute',
+      pointerEvents: props.isScrolling ? 'none' : 'auto' };
+
+    translateDOMPositionXY(style, 0, props.firstRowOffset - firstRowPosition + props.offsetTop);
+
+    return React.createElement(
+      'div',
+      { style: style },
+      this._staticRowArray
+    );
+  },
+
+  _getRowHeight: function _getRowHeight( /*number*/index) /*number*/{
+    return this.props.rowHeightGetter ? this.props.rowHeightGetter(index) : this.props.defaultRowHeight;
+  } });
+
+module.exports = FixedDataTableBufferedRows;
+},{"./FixedDataTableRow.react":22,"./FixedDataTableRowBuffer":23,"./React":31,"./cx":41,"./emptyFunction":43,"./joinClasses":47,"./translateDOMPositionXY":52}],10:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableCell.react
+ * @typechecks
+ */
+
+'use strict';
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var FixedDataTableCellDefault = require('./FixedDataTableCellDefault.react');
+var FixedDataTableHelper = require('./FixedDataTableHelper');
+var React = require('./React');
+var cx = require('./cx');
+var joinClasses = require('./joinClasses');
+
+var DIR_SIGN = FixedDataTableHelper.DIR_SIGN;
+
+var PropTypes = React.PropTypes;
+
+var DEFAULT_PROPS = {
+  align: 'left',
+  highlighted: false };
+
+var FixedDataTableCell = React.createClass({
+  displayName: 'FixedDataTableCell',
+
+  /**
+   * PropTypes are disabled in this component, because having them on slows
+   * down the FixedDataTable hugely in DEV mode. You can enable them back for
+   * development, but please don't commit this component with enabled propTypes.
+   */
+  propTypes_DISABLED_FOR_PERFORMANCE: {
+    isScrolling: PropTypes.bool,
+    align: PropTypes.oneOf(['left', 'center', 'right']),
+    className: PropTypes.string,
+    highlighted: PropTypes.bool,
+    width: PropTypes.number.isRequired,
+    minWidth: PropTypes.number,
+    maxWidth: PropTypes.number,
+    height: PropTypes.number.isRequired,
+
+    cell: PropTypes.oneOfType([PropTypes.string, PropTypes.element, PropTypes.func]),
+
+    columnKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+
+    /**
+     * The row index that will be passed to `cellRenderer` to render.
+     */
+    rowIndex: PropTypes.number.isRequired,
+
+    /**
+     * Callback for when resizer knob (in FixedDataTableCell) is clicked
+     * to initialize resizing. Please note this is only on the cells
+     * in the header.
+     * @param number combinedWidth
+     * @param number left
+     * @param number width
+     * @param number minWidth
+     * @param number maxWidth
+     * @param number|string columnKey
+     * @param object event
+     */
+    onColumnResize: PropTypes.func,
+
+    /**
+     * The left offset in pixels of the cell.
+     */
+    left: PropTypes.number },
+
+  shouldComponentUpdate: function shouldComponentUpdate(nextProps) {
+    return !nextProps.isScrolling || this.props.rowIndex !== nextProps.rowIndex;
+  },
+
+  getDefaultProps: function getDefaultProps() /*object*/{
+    return DEFAULT_PROPS;
+  },
+
+  render: function render() /*object*/{
+    var _props = this.props;
+    var height = _props.height;
+    var width = _props.width;
+    var columnKey = _props.columnKey;
+
+    var props = _objectWithoutProperties(_props, ['height', 'width', 'columnKey']);
+
+    var style = {
+      height: height,
+      width: width };
+
+    if (DIR_SIGN === 1) {
+      style.left = props.left;
+    } else {
+      style.right = props.left;
+    }
+
+    var className = joinClasses(cx({
+      'fixedDataTableCellLayout/main': true,
+      'fixedDataTableCellLayout/lastChild': props.lastChild,
+      'fixedDataTableCellLayout/alignRight': props.align === 'right',
+      'fixedDataTableCellLayout/alignCenter': props.align === 'center',
+      'public/fixedDataTableCell/alignRight': props.align === 'right',
+      'public/fixedDataTableCell/highlighted': props.highlighted,
+      'public/fixedDataTableCell/main': true }), props.className);
+
+    var columnResizerComponent;
+    if (props.onColumnResize) {
+      var columnResizerStyle = {
+        height: height
+      };
+      columnResizerComponent = React.createElement(
+        'div',
+        {
+          className: cx('fixedDataTableCellLayout/columnResizerContainer'),
+          style: columnResizerStyle,
+          onMouseDown: this._onColumnResizerMouseDown },
+        React.createElement('div', {
+          className: joinClasses(cx('fixedDataTableCellLayout/columnResizerKnob'), cx('public/fixedDataTableCell/columnResizerKnob')),
+          style: columnResizerStyle
+        })
+      );
+    }
+
+    var cellProps = {
+      columnKey: columnKey,
+      height: height,
+      width: width
+    };
+
+    if (props.rowIndex >= 0) {
+      cellProps.rowIndex = props.rowIndex;
+    }
+
+    var content;
+    if (React.isValidElement(props.cell)) {
+      content = React.cloneElement(props.cell, cellProps);
+    } else if (typeof props.cell === 'function') {
+      content = props.cell(cellProps);
+    } else {
+      content = React.createElement(
+        FixedDataTableCellDefault,
+        cellProps,
+        props.cell
+      );
+    }
+
+    return React.createElement(
+      'div',
+      { className: className, style: style },
+      columnResizerComponent,
+      content
+    );
+  },
+
+  _onColumnResizerMouseDown: function _onColumnResizerMouseDown( /*object*/event) {
+    this.props.onColumnResize(this.props.left, this.props.width, this.props.minWidth, this.props.maxWidth, this.props.columnKey, event);
+  } });
+
+module.exports = FixedDataTableCell;
+},{"./FixedDataTableCellDefault.react":11,"./FixedDataTableHelper":19,"./React":31,"./cx":41,"./joinClasses":47}],11:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableCellDefault.react
+ * @typechecks
+ */
+
+'use strict';
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var React = require('./React');
+
+var cx = require('./cx');
+var joinClasses = require('./joinClasses');
+
+var PropTypes = React.PropTypes;
+
+/**
+ * Component that handles default cell layout and styling.
+ *
+ * All props unless specified below will be set onto the top level `div`
+ * rendered by the cell.
+ *
+ * Example usage via from a `Column`:
+ * ```
+ * const MyColumn = (
+ *   <Column
+ *     cell={({rowIndex, width, height}) => (
+ *       <Cell
+ *         width={width}
+ *         height={height}
+ *         className="my-class">
+ *         Cell number: <span>{rowIndex}</span>
+*        </Cell>
+ *     )}
+ *     width={100}
+ *   />
+ * );
+ * ```
+ */
+var FixedDataTableCellDefault = React.createClass({
+  displayName: 'FixedDataTableCellDefault',
+
+  propTypes: {
+
+    /**
+     * Outer height of the cell.
+     */
+    height: PropTypes.number,
+
+    /**
+     * Outer width of the cell.
+     */
+    width: PropTypes.number,
+
+    /**
+     * Optional prop that if specified on the `Column` will be passed to the
+     * cell. It can be used to uniquely identify which column is the cell is in.
+     */
+    columnKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]) },
+
+  render: function render() {
+    var _props = this.props;
+    var height = _props.height;
+    var width = _props.width;
+    var style = _props.style;
+    var className = _props.className;
+    var children = _props.children;
+
+    var props = _objectWithoutProperties(_props, ['height', 'width', 'style', 'className', 'children']);
+
+    var innerStyle = _extends({
+      height: height,
+      width: width }, style);
+
+    return React.createElement(
+      'div',
+      _extends({}, props, {
+        className: joinClasses(cx('fixedDataTableCellLayout/wrap1'), cx('public/fixedDataTableCell/wrap1'), className),
+        style: innerStyle }),
+      React.createElement(
+        'div',
+        {
+          className: joinClasses(cx('fixedDataTableCellLayout/wrap2'), cx('public/fixedDataTableCell/wrap2')) },
+        React.createElement(
+          'div',
+          {
+            className: joinClasses(cx('fixedDataTableCellLayout/wrap3'), cx('public/fixedDataTableCell/wrap3')) },
+          React.createElement(
+            'div',
+            { className: cx('public/fixedDataTableCell/cellContent') },
+            children
+          )
+        )
+      )
+    );
+  } });
+
+module.exports = FixedDataTableCellDefault;
+},{"./React":31,"./cx":41,"./joinClasses":47}],12:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableCellGroup.react
+ * @typechecks
+ */
+
+'use strict';
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var FixedDataTableHelper = require('./FixedDataTableHelper');
+var React = require('./React');
+var FixedDataTableCell = require('./FixedDataTableCell.react');
+
+var cx = require('./cx');
+var translateDOMPositionXY = require('./translateDOMPositionXY');
+
+var PropTypes = React.PropTypes;
+
+var DIR_SIGN = FixedDataTableHelper.DIR_SIGN;
+
+var FixedDataTableCellGroupImpl = React.createClass({
+  displayName: 'FixedDataTableCellGroupImpl',
+
+  /**
+   * PropTypes are disabled in this component, because having them on slows
+   * down the FixedDataTable hugely in DEV mode. You can enable them back for
+   * development, but please don't commit this component with enabled propTypes.
+   */
+  propTypes_DISABLED_FOR_PERFORMANCE: {
+
+    /**
+     * Array of <FixedDataTableColumn />.
+     */
+    columns: PropTypes.array.isRequired,
+
+    isScrolling: PropTypes.bool,
+
+    left: PropTypes.number,
+
+    onColumnResize: PropTypes.func,
+
+    rowHeight: PropTypes.number.isRequired,
+
+    rowIndex: PropTypes.number.isRequired,
+
+    width: PropTypes.number.isRequired,
+
+    zIndex: PropTypes.number.isRequired },
+
+  render: function render() /*object*/{
+    var props = this.props;
+    var columns = props.columns;
+    var cells = new Array(columns.length);
+
+    var currentPosition = 0;
+    for (var i = 0, j = columns.length; i < j; i++) {
+      var columnProps = columns[i].props;
+      if (!columnProps.allowCellsRecycling || currentPosition - props.left <= props.width && currentPosition - props.left + columnProps.width >= 0) {
+        var key = 'cell_' + i;
+        cells[i] = this._renderCell(props.rowIndex, props.rowHeight, columnProps, currentPosition, key);
+      }
+      currentPosition += columnProps.width;
+    }
+
+    var contentWidth = this._getColumnsWidth(columns);
+
+    var style = {
+      height: props.height,
+      position: 'absolute',
+      width: contentWidth,
+      zIndex: props.zIndex };
+    translateDOMPositionXY(style, -1 * DIR_SIGN * props.left, 0);
+
+    return React.createElement(
+      'div',
+      {
+        className: cx('fixedDataTableCellGroupLayout/cellGroup'),
+        style: style },
+      cells
+    );
+  },
+
+  _renderCell: function _renderCell(
+  /*number*/rowIndex,
+  /*number*/height,
+  /*object*/columnProps,
+  /*number*/left,
+  /*string*/key) /*object*/{
+
+    var cellIsResizable = columnProps.isResizable && this.props.onColumnResize;
+    var onColumnResize = cellIsResizable ? this.props.onColumnResize : null;
+
+    var className = columnProps.cellClassName;
+
+    return React.createElement(FixedDataTableCell, {
+      isScrolling: this.props.isScrolling,
+      align: columnProps.align,
+      className: className,
+      height: height,
+      key: key,
+      maxWidth: columnProps.maxWidth,
+      minWidth: columnProps.minWidth,
+      onColumnResize: onColumnResize,
+      rowIndex: rowIndex,
+      columnKey: columnProps.columnKey,
+      width: columnProps.width,
+      left: left,
+      cell: columnProps.cell
+    });
+  },
+
+  _getColumnsWidth: function _getColumnsWidth( /*array*/columns) /*number*/{
+    var width = 0;
+    for (var i = 0; i < columns.length; ++i) {
+      width += columns[i].props.width;
+    }
+    return width;
+  } });
+
+var FixedDataTableCellGroup = React.createClass({
+  displayName: 'FixedDataTableCellGroup',
+
+  /**
+   * PropTypes are disabled in this component, because having them on slows
+   * down the FixedDataTable hugely in DEV mode. You can enable them back for
+   * development, but please don't commit this component with enabled propTypes.
+   */
+  propTypes_DISABLED_FOR_PERFORMANCE: {
+    isScrolling: PropTypes.bool,
+    /**
+     * Height of the row.
+     */
+    height: PropTypes.number.isRequired,
+
+    offsetLeft: PropTypes.number,
+
+    left: PropTypes.number,
+    /**
+     * Z-index on which the row will be displayed. Used e.g. for keeping
+     * header and footer in front of other rows.
+     */
+    zIndex: PropTypes.number.isRequired },
+
+  shouldComponentUpdate: function shouldComponentUpdate( /*object*/nextProps) /*boolean*/{
+    return !nextProps.isScrolling || this.props.rowIndex !== nextProps.rowIndex || this.props.left !== nextProps.left;
+  },
+
+  getDefaultProps: function getDefaultProps() /*object*/{
+    return {
+      offsetLeft: 0 };
+  },
+
+  render: function render() /*object*/{
+    var _props = this.props;
+    var offsetLeft = _props.offsetLeft;
+
+    var props = _objectWithoutProperties(_props, ['offsetLeft']);
+
+    var style = {
+      height: props.height };
+
+    if (DIR_SIGN === 1) {
+      style.left = offsetLeft;
+    } else {
+      style.right = offsetLeft;
+    }
+
+    var onColumnResize = props.onColumnResize ? this._onColumnResize : null;
+
+    return React.createElement(
+      'div',
+      {
+        style: style,
+        className: cx('fixedDataTableCellGroupLayout/cellGroupWrapper') },
+      React.createElement(FixedDataTableCellGroupImpl, _extends({}, props, {
+        onColumnResize: onColumnResize
+      }))
+    );
+  },
+
+  _onColumnResize: function _onColumnResize(
+  /*number*/left,
+  /*number*/width,
+  /*?number*/minWidth,
+  /*?number*/maxWidth,
+  /*string|number*/columnKey,
+  /*object*/event) {
+    this.props.onColumnResize && this.props.onColumnResize(this.props.offsetLeft, left - this.props.left + width, width, minWidth, maxWidth, columnKey, event);
+  } });
+
+module.exports = FixedDataTableCellGroup;
+},{"./FixedDataTableCell.react":10,"./FixedDataTableHelper":19,"./React":31,"./cx":41,"./translateDOMPositionXY":52}],13:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableCellTransition.react
+ */
+
+/**
+ * TRANSITION SHIM
+ * This acts to provide an intermediate mapping from the old API to the new API.
+ *
+ * When ready, remove this file and rename the providesModule in
+ * FixedDataTableCellNew.react and dependency in FixedDataTableCellGroup.react
+ */
+
+'use strict';
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var React = require('./React');
+var PropTypes = React.PropTypes;
+
+var cx = require('./cx');
+var joinClasses = require('./joinClasses');
+var shallowEqual = require('./shallowEqual');
+
+var CellDefault = require('./FixedDataTableCellDefault.react');
+
+var TransitionCell = React.createClass({
+  displayName: 'TransitionCell',
+
+  propTypes: {
+    label: PropTypes.string, // header, footer
+    className: PropTypes.string,
+    rowIndex: PropTypes.number,
+    rowGetter: PropTypes.func, // cell
+    dataKey: PropTypes.oneOfType([// cell, footer
+    PropTypes.string, PropTypes.number]),
+    cellRenderer: PropTypes.func,
+    cellDataGetter: PropTypes.func,
+    footerDataGetter: PropTypes.func, // footer
+    footerData: PropTypes.any, // footer
+    columnData: PropTypes.any, // cell, header
+    width: PropTypes.number,
+    height: PropTypes.number,
+    isHeaderCell: PropTypes.bool, // header
+    isFooterCell: PropTypes.bool },
+
+  shouldComponentUpdate: function shouldComponentUpdate( /*object*/nextProps) {
+    var update = false;
+    var rowData;
+    if (nextProps.rowGetter) {
+      rowData = nextProps.rowGetter(nextProps.rowIndex);
+      if (this._rowData !== rowData) {
+        update = true;
+      }
+    }
+
+    var cellData;
+    if (nextProps.dataKey != null) {
+      if (nextProps.cellDataGetter) {
+        cellData = nextProps.cellDataGetter(nextProps.dataKey, rowData);
+      }
+      if (!cellData && rowData) {
+        cellData = rowData[nextProps.dataKey];
+      }
+    }
+    if (this._cellData !== cellData) {
+      update = true;
+    }
+    this._rowData = rowData;
+    this._cellData = cellData;
+
+    return update || !shallowEqual(nextProps, this.props);
+  },
+
+  _getCellData: function _getCellData(props) {
+    var dataKey = props.dataKey;
+    if (dataKey == null) {
+      return null;
+    }
+
+    var rowData;
+    if (props.rowGetter) {
+      rowData = props.rowGetter(props.rowIndex);
+    }
+
+    if (props.cellDataGetter) {
+      return props.cellDataGetter(dataKey, rowData);
+    }
+
+    if (rowData) {
+      return rowData[dataKey];
+    }
+
+    if (props.footerDataGetter) {
+      return props.footerDataGetter()[dataKey];
+    }
+
+    if (props.footerData) {
+      return props.footerData[dataKey];
+    }
+
+    if (props.headerDataGetter) {
+      return props.headerDataGetter[dataKey];
+    }
+  },
+
+  _getRowData: function _getRowData(props) {
+    if (props.rowGetter) {
+      return props.rowGetter(props.rowIndex) || {};
+    }
+
+    if (props.footerDataGetter) {
+      return props.footerDataGetter() || {};
+    }
+
+    if (props.footerData) {
+      return props.footerData || {};
+    }
+
+    return {};
+  },
+
+  render: function render() {
+    var props = this.props;
+
+    var cellData = this._getCellData(props);
+    var content = cellData;
+    var rowData = this._getRowData(props);
+    var usingRenderer = !!(props.cellRenderer || props.groupHeaderRenderer);
+
+    if (props.isHeaderCell || props.isFooterCell) {
+      content = content || props.label;
+    }
+
+    if (props.cellRenderer) {
+      if (props.isHeaderCell || props.isFooterCell) {
+        content = props.cellRenderer(props.label, props.dataKey, props.columnData, rowData, props.width) || props.label;
+      } else {
+        content = props.cellRenderer(cellData, props.dataKey, rowData, props.rowIndex, props.columnData, props.width);
+      }
+    }
+
+    if (props.groupHeaderRenderer) {
+      content = props.groupHeaderRenderer(props.label, props.dataKey, // index in children
+      props.groupHeaderData, props.groupHeaderLabels, props.width) || content;
+    }
+
+    var contentClass = cx('public/fixedDataTableCell/cellContent');
+
+    if (React.isValidElement(content) && usingRenderer) {
+      content = React.cloneElement(content, {
+        className: joinClasses(content.props.className, contentClass)
+      });
+    } else {
+      return React.createElement(
+        CellDefault,
+        props,
+        content
+      );
+    }
+
+    var innerStyle = _extends({
+      height: props.height,
+      width: props.width }, props.style);
+
+    return React.createElement(
+      'div',
+      _extends({}, this.props, {
+        className: joinClasses(cx('fixedDataTableCellLayout/wrap1'), cx('public/fixedDataTableCell/wrap1'), this.props.className),
+        style: innerStyle }),
+      React.createElement(
+        'div',
+        {
+          className: joinClasses(cx('fixedDataTableCellLayout/wrap2'), cx('public/fixedDataTableCell/wrap2')) },
+        React.createElement(
+          'div',
+          {
+            className: joinClasses(cx('fixedDataTableCellLayout/wrap3'), cx('public/fixedDataTableCell/wrap3')) },
+          content
+        )
+      )
+    );
+  }
+});
+
+module.exports = TransitionCell;
+// footer
+},{"./FixedDataTableCellDefault.react":11,"./React":31,"./cx":41,"./joinClasses":47,"./shallowEqual":51}],14:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableColumn.react
+ */
+
+/**
+ * TRANSITION SHIM
+ * This acts to provide an intermediate mapping from the old API to the new API.
+ *
+ * When ready, remove this file and rename the providesModule in
+ * FixedDataTableColumnNew.react
+ */
+
+'use strict';
+
+var React = require('./React');
+
+var TransitionColumn = React.createClass({
+  displayName: 'TransitionColumn',
+
+  statics: {
+    __TableColumn__: true
+  },
+
+  render: function render() {
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error('Component <TransitionColumn /> should never render');
+    }
+    return null;
+  }
+});
+
+module.exports = TransitionColumn;
+}).call(this,require('_process'))
+
+},{"./React":31,"_process":3}],15:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableColumnGroup.react
+ */
+
+/**
+ * TRANSITION SHIM
+ * This provides an intermediate mapping from the old API to the new API.
+ *
+ * When ready, remove this file and rename the providesModule in
+ * FixedDataTableColumnNew.react
+ */
+
+'use strict';
+
+var React = require('./React');
+
+var TransitionColumnGroup = React.createClass({
+  displayName: 'TransitionColumnGroup',
+
+  statics: {
+    __TableColumnGroup__: true },
+
+  render: function render() {
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error('Component <TransitionColumnGroup /> should never render');
+    }
+    return null;
+  }
+});
+
+module.exports = TransitionColumnGroup;
+}).call(this,require('_process'))
+
+},{"./React":31,"_process":3}],16:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableColumnGroupNew.react
+ * @typechecks
+ */
+
+'use strict';
+
+var React = require('./React');
+
+var PropTypes = React.PropTypes;
+
+/**
+ * Component that defines the attributes of a table column group.
+ */
+var FixedDataTableColumnGroup = React.createClass({
+  displayName: 'FixedDataTableColumnGroup',
+
+  statics: {
+    __TableColumnGroup__: true },
+
+  propTypes: {
+    /**
+     * The horizontal alignment of the table cell content.
+     */
+    align: PropTypes.oneOf(['left', 'center', 'right']),
+
+    /**
+     * Controls if the column group is fixed when scrolling in the X axis.
+     */
+    fixed: PropTypes.bool,
+
+    /**
+     * This is the header cell for this column group.
+     * This can either be a string or a React element. Passing in a string
+     * will render a default footer cell with that string. By default, the React
+     * element passed in can expect to receive the following props:
+     *
+     * ```
+     * props: {
+     *   height: number // (supplied from the groupHeaderHeight)
+     *   width: number // (supplied from the Column)
+     * }
+     * ```
+     *
+     * Because you are passing in your own React element, you can feel free to
+     * pass in whatever props you may want or need.
+     *
+     * You can also pass in a function that returns a react elemnt, with the
+     * props object above passed in as the first parameter.
+     */
+    header: PropTypes.oneOfType([PropTypes.node, PropTypes.func]) },
+
+  getDefaultProps: function getDefaultProps() /*object*/{
+    return {
+      fixed: false };
+  },
+
+  render: function render() {
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error('Component <FixedDataTableColumnGroup /> should never render');
+    }
+    return null;
+  } });
+
+module.exports = FixedDataTableColumnGroup;
+}).call(this,require('_process'))
+
+},{"./React":31,"_process":3}],17:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableColumnNew.react
+ * @typechecks
+ */
+
+'use strict';
+
+var React = require('./React');
+
+var PropTypes = React.PropTypes;
+
+/**
+ * Component that defines the attributes of table column.
+ */
+var FixedDataTableColumn = React.createClass({
+  displayName: 'FixedDataTableColumn',
+
+  statics: {
+    __TableColumn__: true
+  },
+
+  propTypes: {
+    /**
+     * The horizontal alignment of the table cell content.
+     */
+    align: PropTypes.oneOf(['left', 'center', 'right']),
+
+    /**
+     * Controls if the column is fixed when scrolling in the X axis.
+     */
+    fixed: PropTypes.bool,
+
+    /**
+     * The header cell for this column.
+     * This can either be a string a React element, or a function that generates
+     * a React Element. Passing in a string will render a default header cell
+     * with that string. By default, the React element passed in can expect to
+     * receive the following props:
+     *
+     * ```
+     * props: {
+     *   columnKey: string // (of the column, if given)
+     *   height: number // (supplied from the Table or rowHeightGetter)
+     *   width: number // (supplied from the Column)
+     * }
+     * ```
+     *
+     * Because you are passing in your own React element, you can feel free to
+     * pass in whatever props you may want or need.
+     *
+     * If you pass in a function, you will receive the same props object as the
+     * first argument.
+     */
+    header: PropTypes.oneOfType([PropTypes.node, PropTypes.func]),
+
+    /**
+     * This is the body cell that will be cloned for this column.
+     * This can either be a string a React element, or a function that generates
+     * a React Element. Passing in a string will render a default header cell
+     * with that string. By default, the React element passed in can expect to
+     * receive the following props:
+     *
+     * ```
+     * props: {
+     *   rowIndex; number // (the row index of the cell)
+     *   columnKey: string // (of the column, if given)
+     *   height: number // (supplied from the Table or rowHeightGetter)
+     *   width: number // (supplied from the Column)
+     * }
+     * ```
+     *
+     * Because you are passing in your own React element, you can feel free to
+     * pass in whatever props you may want or need.
+     *
+     * If you pass in a function, you will receive the same props object as the
+     * first argument.
+     */
+    cell: PropTypes.oneOfType([PropTypes.node, PropTypes.func]),
+
+    /**
+     * This is the footer cell for this column.
+     * This can either be a string a React element, or a function that generates
+     * a React Element. Passing in a string will render a default header cell
+     * with that string. By default, the React element passed in can expect to
+     * receive the following props:
+     *
+     * ```
+     * props: {
+     *   columnKey: string // (of the column, if given)
+     *   height: number // (supplied from the Table or rowHeightGetter)
+     *   width: number // (supplied from the Column)
+     * }
+     * ```
+     *
+     * Because you are passing in your own React element, you can feel free to
+     * pass in whatever props you may want or need.
+     *
+     * If you pass in a function, you will receive the same props object as the
+     * first argument.
+     */
+    footer: PropTypes.oneOfType([PropTypes.node, PropTypes.func]),
+
+    /**
+     * This is used to uniquely identify the column, and is not required unless
+     * you a resizing columns. This will be the key given in the
+     * `onColumnResizeEndCallback` on the Table.
+     */
+    columnKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+
+    /**
+     * The pixel width of the column.
+     */
+    width: PropTypes.number.isRequired,
+
+    /**
+     * If this is a resizable column this is its minimum pixel width.
+     */
+    minWidth: PropTypes.number,
+
+    /**
+     * If this is a resizable column this is its maximum pixel width.
+     */
+    maxWidth: PropTypes.number,
+
+    /**
+     * The grow factor relative to other columns. Same as the flex-grow API
+     * from http://www.w3.org/TR/css3-flexbox/. Basically, take any available
+     * extra width and distribute it proportionally according to all columns'
+     * flexGrow values. Defaults to zero (no-flexing).
+     */
+    flexGrow: PropTypes.number,
+
+    /**
+     * Whether the column can be resized with the
+     * FixedDataTableColumnResizeHandle. Please note that if a column
+     * has a flex grow, once you resize the column this will be set to 0.
+     *
+     * This property only provides the UI for the column resizing. If this
+     * is set to true, you will need to set the onColumnResizeEndCallback table
+     * property and render your columns appropriately.
+     */
+    isResizable: PropTypes.bool,
+
+    /**
+     * Whether cells in this column can be removed from document when outside
+     * of viewport as a result of horizontal scrolling.
+     * Setting this property to true allows the table to not render cells in
+     * particular column that are outside of viewport for visible rows. This
+     * allows to create table with many columns and not have vertical scrolling
+     * performance drop.
+     * Setting the property to false will keep previous behaviour and keep
+     * cell rendered if the row it belongs to is visible.
+     */
+    allowCellsRecycling: PropTypes.bool },
+
+  getDefaultProps: function getDefaultProps() /*object*/{
+    return {
+      allowCellsRecycling: false,
+      fixed: false };
+  },
+
+  render: function render() {
+    if (process.env.NODE_ENV !== 'production') {
+      throw new Error('Component <FixedDataTableColumn /> should never render');
+    }
+    return null;
+  } });
+
+module.exports = FixedDataTableColumn;
+}).call(this,require('_process'))
+
+},{"./React":31,"_process":3}],18:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * This is to be used with the FixedDataTable. It is a read line
+ * that when you click on a column that is resizable appears and allows
+ * you to resize the corresponding column.
+ *
+ * @providesModule FixedDataTableColumnResizeHandle.react
+ * @typechecks
+ */
+
+'use strict';
+
+var DOMMouseMoveTracker = require('./DOMMouseMoveTracker');
+var Locale = require('./Locale');
+var React = require('./React');
+var ReactComponentWithPureRenderMixin = require('./ReactComponentWithPureRenderMixin');
+
+var clamp = require('./clamp');
+var cx = require('./cx');
+
+var PropTypes = React.PropTypes;
+
+var FixedDataTableColumnResizeHandle = React.createClass({
+  displayName: 'FixedDataTableColumnResizeHandle',
+
+  mixins: [ReactComponentWithPureRenderMixin],
+
+  propTypes: {
+    visible: PropTypes.bool.isRequired,
+
+    /**
+     * This is the height of the line
+     */
+    height: PropTypes.number.isRequired,
+
+    /**
+     * Offset from left border of the table, please note
+     * that the line is a border on diff. So this is really the
+     * offset of the column itself.
+     */
+    leftOffset: PropTypes.number.isRequired,
+
+    /**
+     * Height of the clickable region of the line.
+     * This is assumed to be at the top of the line.
+     */
+    knobHeight: PropTypes.number.isRequired,
+
+    /**
+     * The line is a border on a diff, so this is essentially
+     * the width of column.
+     */
+    initialWidth: PropTypes.number,
+
+    /**
+     * The minimum width this dragger will collapse to
+     */
+    minWidth: PropTypes.number,
+
+    /**
+     * The maximum width this dragger will collapse to
+     */
+    maxWidth: PropTypes.number,
+
+    /**
+     * Initial click event on the header cell.
+     */
+    initialEvent: PropTypes.object,
+
+    /**
+     * When resizing is complete this is called.
+     */
+    onColumnResizeEnd: PropTypes.func,
+
+    /**
+     * Column key for the column being resized.
+     */
+    columnKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]) },
+
+  getInitialState: function getInitialState() /*object*/{
+    return {
+      width: 0,
+      cursorDelta: 0
+    };
+  },
+
+  componentWillReceiveProps: function componentWillReceiveProps( /*object*/newProps) {
+    if (newProps.initialEvent && !this._mouseMoveTracker.isDragging()) {
+      this._mouseMoveTracker.captureMouseMoves(newProps.initialEvent);
+      this.setState({
+        width: newProps.initialWidth,
+        cursorDelta: newProps.initialWidth
+      });
+    }
+  },
+
+  componentDidMount: function componentDidMount() {
+    this._mouseMoveTracker = new DOMMouseMoveTracker(this._onMove, this._onColumnResizeEnd, document.body);
+  },
+
+  componentWillUnmount: function componentWillUnmount() {
+    this._mouseMoveTracker.releaseMouseMoves();
+    this._mouseMoveTracker = null;
+  },
+
+  render: function render() /*object*/{
+    var style = {
+      width: this.state.width,
+      height: this.props.height };
+    if (Locale.isRTL()) {
+      style.right = this.props.leftOffset;
+    } else {
+      style.left = this.props.leftOffset;
+    }
+    return React.createElement(
+      'div',
+      {
+        className: cx({
+          'fixedDataTableColumnResizerLineLayout/main': true,
+          'fixedDataTableColumnResizerLineLayout/hiddenElem': !this.props.visible,
+          'public/fixedDataTableColumnResizerLine/main': true }),
+        style: style },
+      React.createElement('div', {
+        className: cx('fixedDataTableColumnResizerLineLayout/mouseArea'),
+        style: { height: this.props.height }
+      })
+    );
+  },
+
+  _onMove: function _onMove( /*number*/deltaX) {
+    if (Locale.isRTL()) {
+      deltaX = -deltaX;
+    }
+    var newWidth = this.state.cursorDelta + deltaX;
+    var newColumnWidth = clamp(newWidth, this.props.minWidth, this.props.maxWidth);
+
+    // Please note cursor delta is the different between the currently width
+    // and the new width.
+    this.setState({
+      width: newColumnWidth,
+      cursorDelta: newWidth
+    });
+  },
+
+  _onColumnResizeEnd: function _onColumnResizeEnd() {
+    this._mouseMoveTracker.releaseMouseMoves();
+    this.props.onColumnResizeEnd(this.state.width, this.props.columnKey);
+  } });
+
+module.exports = FixedDataTableColumnResizeHandle;
+},{"./DOMMouseMoveTracker":5,"./Locale":29,"./React":31,"./ReactComponentWithPureRenderMixin":32,"./clamp":39,"./cx":41}],19:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableHelper
+ * @typechecks
+ */
+
+'use strict';
+
+var Locale = require('./Locale');
+var React = require('./React');
+var FixedDataTableColumnGroup = require('./FixedDataTableColumnGroup.react');
+var FixedDataTableColumn = require('./FixedDataTableColumn.react');
+
+var DIR_SIGN = Locale.isRTL() ? -1 : +1;
+// A cell up to 5px outside of the visible area will still be considered visible
+var CELL_VISIBILITY_TOLERANCE = 5; // used for flyouts
+
+function renderToString(value) /*string*/{
+  if (value === null || value === undefined) {
+    return '';
+  } else {
+    return String(value);
+  }
+}
+
+/**
+ * Helper method to execute a callback against all columns given the children
+ * of a table.
+ * @param {?object|array} children
+ *    Children of a table.
+ * @param {function} callback
+ *    Function to excecute for each column. It is passed the column.
+ */
+function forEachColumn(children, callback) {
+  React.Children.forEach(children, function (child) {
+    if (child.type === FixedDataTableColumnGroup) {
+      forEachColumn(child.props.children, callback);
+    } else if (child.type === FixedDataTableColumn) {
+      callback(child);
+    }
+  });
+}
+
+/**
+ * Helper method to map columns to new columns. This takes into account column
+ * groups and will generate a new column group if its columns change.
+ * @param {?object|array} children
+ *    Children of a table.
+ * @param {function} callback
+ *    Function to excecute for each column. It is passed the column and should
+ *    return a result column.
+ */
+function mapColumns(children, callback) {
+  var newChildren = [];
+  React.Children.forEach(children, function (originalChild) {
+    var newChild = originalChild;
+
+    // The child is either a column group or a column. If it is a column group
+    // we need to iterate over its columns and then potentially generate a
+    // new column group
+    if (originalChild.type === FixedDataTableColumnGroup) {
+      var haveColumnsChanged = false;
+      var newColumns = [];
+
+      forEachColumn(originalChild.props.children, function (originalcolumn) {
+        var newColumn = callback(originalcolumn);
+        if (newColumn !== originalcolumn) {
+          haveColumnsChanged = true;
+        }
+        newColumns.push(newColumn);
+      });
+
+      // If the column groups columns have changed clone the group and supply
+      // new children
+      if (haveColumnsChanged) {
+        newChild = React.cloneElement(originalChild, {
+          children: newColumns });
+      }
+    } else if (originalChild.type === FixedDataTableColumn) {
+      newChild = callback(originalChild);
+    }
+
+    newChildren.push(newChild);
+  });
+
+  return newChildren;
+}
+
+var FixedDataTableHelper = {
+  DIR_SIGN: DIR_SIGN,
+  CELL_VISIBILITY_TOLERANCE: CELL_VISIBILITY_TOLERANCE,
+  renderToString: renderToString,
+  forEachColumn: forEachColumn,
+  mapColumns: mapColumns };
+
+module.exports = FixedDataTableHelper;
+},{"./FixedDataTableColumn.react":14,"./FixedDataTableColumnGroup.react":15,"./Locale":29,"./React":31}],20:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableNew.react
+ * @typechecks
+ * @noflow
+ */
+
+/*eslint no-bitwise:1*/
+
+'use strict';
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var React = require('./React');
+var ReactComponentWithPureRenderMixin = require('./ReactComponentWithPureRenderMixin');
+var ReactWheelHandler = require('./ReactWheelHandler');
+var Scrollbar = require('./Scrollbar.react');
+var FixedDataTableBufferedRows = require('./FixedDataTableBufferedRows.react');
+var FixedDataTableColumnResizeHandle = require('./FixedDataTableColumnResizeHandle.react');
+var FixedDataTableRow = require('./FixedDataTableRow.react');
+var FixedDataTableScrollHelper = require('./FixedDataTableScrollHelper');
+var FixedDataTableWidthHelper = require('./FixedDataTableWidthHelper');
+
+var cx = require('./cx');
+var debounceCore = require('./debounceCore');
+var emptyFunction = require('./emptyFunction');
+var invariant = require('./invariant');
+var joinClasses = require('./joinClasses');
+var shallowEqual = require('./shallowEqual');
+var translateDOMPositionXY = require('./translateDOMPositionXY');
+
+var PropTypes = React.PropTypes;
+
+var ReactChildren = React.Children;
+
+var EMPTY_OBJECT = {};
+var BORDER_HEIGHT = 1;
+var HEADER = 'header';
+var FOOTER = 'footer';
+var CELL = 'cell';
+
+/**
+ * Data grid component with fixed or scrollable header and columns.
+ *
+ * The layout of the data table is as follows:
+ *
+ * ```
+ * +---------------------------------------------------+
+ * | Fixed Column Group    | Scrollable Column Group   |
+ * | Header                | Header                    |
+ * |                       |                           |
+ * +---------------------------------------------------+
+ * |                       |                           |
+ * | Fixed Header Columns  | Scrollable Header Columns |
+ * |                       |                           |
+ * +-----------------------+---------------------------+
+ * |                       |                           |
+ * | Fixed Body Columns    | Scrollable Body Columns   |
+ * |                       |                           |
+ * +-----------------------+---------------------------+
+ * |                       |                           |
+ * | Fixed Footer Columns  | Scrollable Footer Columns |
+ * |                       |                           |
+ * +-----------------------+---------------------------+
+ * ```
+ *
+ * - Fixed Column Group Header: These are the headers for a group
+ *   of columns if included in the table that do not scroll
+ *   vertically or horizontally.
+ *
+ * - Scrollable Column Group Header: The header for a group of columns
+ *   that do not move while scrolling vertically, but move horizontally
+ *   with the horizontal scrolling.
+ *
+ * - Fixed Header Columns: The header columns that do not move while scrolling
+ *   vertically or horizontally.
+ *
+ * - Scrollable Header Columns: The header columns that do not move
+ *   while scrolling vertically, but move horizontally with the horizontal
+ *   scrolling.
+ *
+ * - Fixed Body Columns: The body columns that do not move while scrolling
+ *   horizontally, but move vertically with the vertical scrolling.
+ *
+ * - Scrollable Body Columns: The body columns that move while scrolling
+ *   vertically or horizontally.
+ */
+var FixedDataTable = React.createClass({
+  displayName: 'FixedDataTable',
+
+  propTypes: {
+
+    /**
+     * Pixel width of table. If all columns do not fit,
+     * a horizontal scrollbar will appear.
+     */
+    width: PropTypes.number.isRequired,
+
+    /**
+     * Pixel height of table. If all rows do not fit,
+     * a vertical scrollbar will appear.
+     *
+     * Either `height` or `maxHeight` must be specified.
+     */
+    height: PropTypes.number,
+
+    /**
+     * Maximum pixel height of table. If all rows do not fit,
+     * a vertical scrollbar will appear.
+     *
+     * Either `height` or `maxHeight` must be specified.
+     */
+    maxHeight: PropTypes.number,
+
+    /**
+     * Pixel height of table's owner, this is used in a managed scrolling
+     * situation when you want to slide the table up from below the fold
+     * without having to constantly update the height on every scroll tick.
+     * Instead, vary this property on scroll. By using `ownerHeight`, we
+     * over-render the table while making sure the footer and horizontal
+     * scrollbar of the table are visible when the current space for the table
+     * in view is smaller than the final, over-flowing height of table. It
+     * allows us to avoid resizing and reflowing table when it is moving in the
+     * view.
+     *
+     * This is used if `ownerHeight < height` (or `maxHeight`).
+     */
+    ownerHeight: PropTypes.number,
+
+    overflowX: PropTypes.oneOf(['hidden', 'auto']),
+    overflowY: PropTypes.oneOf(['hidden', 'auto']),
+
+    /**
+     * Number of rows in the table.
+     */
+    rowsCount: PropTypes.number.isRequired,
+
+    /**
+     * Pixel height of rows unless `rowHeightGetter` is specified and returns
+     * different value.
+     */
+    rowHeight: PropTypes.number.isRequired,
+
+    /**
+     * If specified, `rowHeightGetter(index)` is called for each row and the
+     * returned value overrides `rowHeight` for particular row.
+     */
+    rowHeightGetter: PropTypes.func,
+
+    /**
+     * To get any additional CSS classes that should be added to a row,
+     * `rowClassNameGetter(index)` is called.
+     */
+    rowClassNameGetter: PropTypes.func,
+
+    /**
+     * Pixel height of the column group header.
+     */
+    groupHeaderHeight: PropTypes.number,
+
+    /**
+     * Pixel height of header.
+     */
+    headerHeight: PropTypes.number.isRequired,
+
+    /**
+     * Pixel height of footer.
+     */
+    footerHeight: PropTypes.number,
+
+    /**
+     * Value of horizontal scroll.
+     */
+    scrollLeft: PropTypes.number,
+
+    /**
+     * Index of column to scroll to.
+     */
+    scrollToColumn: PropTypes.number,
+
+    /**
+     * Value of vertical scroll.
+     */
+    scrollTop: PropTypes.number,
+
+    /**
+     * Index of row to scroll to.
+     */
+    scrollToRow: PropTypes.number,
+
+    /**
+     * Callback that is called when scrolling starts with current horizontal
+     * and vertical scroll values.
+     */
+    onScrollStart: PropTypes.func,
+
+    /**
+     * Callback that is called when scrolling ends or stops with new horizontal
+     * and vertical scroll values.
+     */
+    onScrollEnd: PropTypes.func,
+
+    /**
+     * Callback that is called when `rowHeightGetter` returns a different height
+     * for a row than the `rowHeight` prop. This is necessary because initially
+     * table estimates heights of some parts of the content.
+     */
+    onContentHeightChange: PropTypes.func,
+
+    /**
+     * Callback that is called when a row is clicked.
+     */
+    onRowClick: PropTypes.func,
+
+    /**
+     * Callback that is called when a row is double clicked.
+     */
+    onRowDoubleClick: PropTypes.func,
+
+    /**
+     * Callback that is called when a mouse-down event happens on a row.
+     */
+    onRowMouseDown: PropTypes.func,
+
+    /**
+     * Callback that is called when a mouse-enter event happens on a row.
+     */
+    onRowMouseEnter: PropTypes.func,
+
+    /**
+     * Callback that is called when a mouse-leave event happens on a row.
+     */
+    onRowMouseLeave: PropTypes.func,
+
+    /**
+     * Callback that is called when resizer has been released
+     * and column needs to be updated.
+     *
+     * Required if the isResizable property is true on any column.
+     *
+     * ```
+     * function(
+     *   newColumnWidth: number,
+     *   columnKey: string,
+     * )
+     * ```
+     */
+    onColumnResizeEndCallback: PropTypes.func,
+
+    /**
+     * Whether a column is currently being resized.
+     */
+    isColumnResizing: PropTypes.bool },
+
+  getDefaultProps: function getDefaultProps() /*object*/{
+    return {
+      footerHeight: 0,
+      groupHeaderHeight: 0,
+      headerHeight: 0,
+      scrollLeft: 0,
+      scrollTop: 0 };
+  },
+
+  getInitialState: function getInitialState() /*object*/{
+    var props = this.props;
+    var viewportHeight = (props.height === undefined ? props.maxHeight : props.height) - (props.headerHeight || 0) - (props.footerHeight || 0) - (props.groupHeaderHeight || 0);
+    this._scrollHelper = new FixedDataTableScrollHelper(props.rowsCount, props.rowHeight, viewportHeight, props.rowHeightGetter);
+    if (props.scrollTop) {
+      this._scrollHelper.scrollTo(props.scrollTop);
+    }
+    this._didScrollStop = debounceCore(this._didScrollStop, 200, this);
+
+    return this._calculateState(this.props);
+  },
+
+  componentWillMount: function componentWillMount() {
+    var scrollToRow = this.props.scrollToRow;
+    if (scrollToRow !== undefined && scrollToRow !== null) {
+      this._rowToScrollTo = scrollToRow;
+    }
+    var scrollToColumn = this.props.scrollToColumn;
+    if (scrollToColumn !== undefined && scrollToColumn !== null) {
+      this._columnToScrollTo = scrollToColumn;
+    }
+    this._wheelHandler = new ReactWheelHandler(this._onWheel, this._shouldHandleWheelX, this._shouldHandleWheelY);
+  },
+
+  _shouldHandleWheelX: function _shouldHandleWheelX( /*number*/delta) /*boolean*/{
+    if (this.props.overflowX === 'hidden') {
+      return false;
+    }
+
+    delta = Math.round(delta);
+    if (delta === 0) {
+      return false;
+    }
+
+    return delta < 0 && this.state.scrollX > 0 || delta >= 0 && this.state.scrollX < this.state.maxScrollX;
+  },
+
+  _shouldHandleWheelY: function _shouldHandleWheelY( /*number*/delta) /*boolean*/{
+    if (this.props.overflowY === 'hidden' || delta === 0) {
+      return false;
+    }
+
+    delta = Math.round(delta);
+    if (delta === 0) {
+      return false;
+    }
+
+    return delta < 0 && this.state.scrollY > 0 || delta >= 0 && this.state.scrollY < this.state.maxScrollY;
+  },
+
+  _reportContentHeight: function _reportContentHeight() {
+    var scrollContentHeight = this.state.scrollContentHeight;
+    var reservedHeight = this.state.reservedHeight;
+    var requiredHeight = scrollContentHeight + reservedHeight;
+    var contentHeight;
+    var useMaxHeight = this.props.height === undefined;
+    if (useMaxHeight && this.props.maxHeight > requiredHeight) {
+      contentHeight = requiredHeight;
+    } else if (this.state.height > requiredHeight && this.props.ownerHeight) {
+      contentHeight = Math.max(requiredHeight, this.props.ownerHeight);
+    } else {
+      contentHeight = this.state.height + this.state.maxScrollY;
+    }
+    if (contentHeight !== this._contentHeight && this.props.onContentHeightChange) {
+      this.props.onContentHeightChange(contentHeight);
+    }
+    this._contentHeight = contentHeight;
+  },
+
+  componentDidMount: function componentDidMount() {
+    this._reportContentHeight();
+  },
+
+  componentWillReceiveProps: function componentWillReceiveProps( /*object*/nextProps) {
+    var scrollToRow = nextProps.scrollToRow;
+    if (scrollToRow !== undefined && scrollToRow !== null) {
+      this._rowToScrollTo = scrollToRow;
+    }
+    var scrollToColumn = nextProps.scrollToColumn;
+    if (scrollToColumn !== undefined && scrollToColumn !== null) {
+      this._columnToScrollTo = scrollToColumn;
+    }
+
+    var newOverflowX = nextProps.overflowX;
+    var newOverflowY = nextProps.overflowY;
+    if (newOverflowX !== this.props.overflowX || newOverflowY !== this.props.overflowY) {
+      this._wheelHandler = new ReactWheelHandler(this._onWheel, newOverflowX !== 'hidden', // Should handle horizontal scroll
+      newOverflowY !== 'hidden' // Should handle vertical scroll
+      );
+    }
+
+    // In the case of controlled scrolling, notify.
+    if (this.props.ownerHeight !== nextProps.ownerHeight || this.props.scrollTop !== nextProps.scrollTop) {
+      this._didScrollStart();
+    }
+    this._didScrollStop();
+
+    this.setState(this._calculateState(nextProps, this.state));
+  },
+
+  componentDidUpdate: function componentDidUpdate() {
+    this._reportContentHeight();
+  },
+
+  render: function render() /*object*/{
+    var state = this.state;
+    var props = this.props;
+
+    var groupHeader;
+    if (state.useGroupHeader) {
+      groupHeader = React.createElement(FixedDataTableRow, {
+        key: 'group_header',
+        isScrolling: this._isScrolling,
+        className: joinClasses(cx('fixedDataTableLayout/header'), cx('public/fixedDataTable/header')),
+        width: state.width,
+        height: state.groupHeaderHeight,
+        index: 0,
+        zIndex: 1,
+        offsetTop: 0,
+        scrollLeft: state.scrollX,
+        fixedColumns: state.groupHeaderFixedColumns,
+        scrollableColumns: state.groupHeaderScrollableColumns,
+        onColumnResize: this._onColumnResize
+      });
+    }
+
+    var maxScrollY = this.state.maxScrollY;
+    var showScrollbarX = state.maxScrollX > 0 && state.overflowX !== 'hidden';
+    var showScrollbarY = maxScrollY > 0 && state.overflowY !== 'hidden';
+    var scrollbarXHeight = showScrollbarX ? Scrollbar.SIZE : 0;
+    var scrollbarYHeight = state.height - scrollbarXHeight - 2 * BORDER_HEIGHT - state.footerHeight;
+
+    var headerOffsetTop = state.useGroupHeader ? state.groupHeaderHeight : 0;
+    var bodyOffsetTop = headerOffsetTop + state.headerHeight;
+    scrollbarYHeight -= bodyOffsetTop;
+    var bottomSectionOffset = 0;
+    var footOffsetTop = props.maxHeight != null ? bodyOffsetTop + state.bodyHeight : bodyOffsetTop + scrollbarYHeight;
+    var rowsContainerHeight = footOffsetTop + state.footerHeight;
+
+    if (props.ownerHeight !== undefined && props.ownerHeight < state.height) {
+      bottomSectionOffset = props.ownerHeight - state.height;
+
+      footOffsetTop = Math.min(footOffsetTop, props.ownerHeight - state.footerHeight - scrollbarXHeight);
+
+      scrollbarYHeight = Math.max(0, footOffsetTop - bodyOffsetTop);
+    }
+
+    var verticalScrollbar;
+    if (showScrollbarY) {
+      verticalScrollbar = React.createElement(Scrollbar, {
+        size: scrollbarYHeight,
+        contentSize: scrollbarYHeight + maxScrollY,
+        onScroll: this._onVerticalScroll,
+        verticalTop: bodyOffsetTop,
+        position: state.scrollY
+      });
+    }
+
+    var horizontalScrollbar;
+    if (showScrollbarX) {
+      var scrollbarXWidth = state.width;
+      horizontalScrollbar = React.createElement(HorizontalScrollbar, {
+        contentSize: scrollbarXWidth + state.maxScrollX,
+        offset: bottomSectionOffset,
+        onScroll: this._onHorizontalScroll,
+        position: state.scrollX,
+        size: scrollbarXWidth
+      });
+    }
+
+    var dragKnob = React.createElement(FixedDataTableColumnResizeHandle, {
+      height: state.height,
+      initialWidth: state.columnResizingData.width || 0,
+      minWidth: state.columnResizingData.minWidth || 0,
+      maxWidth: state.columnResizingData.maxWidth || Number.MAX_VALUE,
+      visible: !!state.isColumnResizing,
+      leftOffset: state.columnResizingData.left || 0,
+      knobHeight: state.headerHeight,
+      initialEvent: state.columnResizingData.initialEvent,
+      onColumnResizeEnd: props.onColumnResizeEndCallback,
+      columnKey: state.columnResizingData.key
+    });
+
+    var footer = null;
+    if (state.footerHeight) {
+      footer = React.createElement(FixedDataTableRow, {
+        key: 'footer',
+        isScrolling: this._isScrolling,
+        className: joinClasses(cx('fixedDataTableLayout/footer'), cx('public/fixedDataTable/footer')),
+        width: state.width,
+        height: state.footerHeight,
+        index: -1,
+        zIndex: 1,
+        offsetTop: footOffsetTop,
+        fixedColumns: state.footFixedColumns,
+        scrollableColumns: state.footScrollableColumns,
+        scrollLeft: state.scrollX
+      });
+    }
+
+    var rows = this._renderRows(bodyOffsetTop);
+
+    var header = React.createElement(FixedDataTableRow, {
+      key: 'header',
+      isScrolling: this._isScrolling,
+      className: joinClasses(cx('fixedDataTableLayout/header'), cx('public/fixedDataTable/header')),
+      width: state.width,
+      height: state.headerHeight,
+      index: -1,
+      zIndex: 1,
+      offsetTop: headerOffsetTop,
+      scrollLeft: state.scrollX,
+      fixedColumns: state.headFixedColumns,
+      scrollableColumns: state.headScrollableColumns,
+      onColumnResize: this._onColumnResize
+    });
+
+    var topShadow;
+    var bottomShadow;
+    if (state.scrollY) {
+      topShadow = React.createElement('div', {
+        className: joinClasses(cx('fixedDataTableLayout/topShadow'), cx('public/fixedDataTable/topShadow')),
+        style: { top: bodyOffsetTop }
+      });
+    }
+
+    if (state.ownerHeight != null && state.ownerHeight < state.height && state.scrollContentHeight + state.reservedHeight > state.ownerHeight || state.scrollY < maxScrollY) {
+      bottomShadow = React.createElement('div', {
+        className: joinClasses(cx('fixedDataTableLayout/bottomShadow'), cx('public/fixedDataTable/bottomShadow')),
+        style: { top: footOffsetTop }
+      });
+    }
+
+    return React.createElement(
+      'div',
+      {
+        className: joinClasses(cx('fixedDataTableLayout/main'), cx('public/fixedDataTable/main')),
+        onWheel: this._wheelHandler.onWheel,
+        style: { height: state.height, width: state.width } },
+      React.createElement(
+        'div',
+        {
+          className: cx('fixedDataTableLayout/rowsContainer'),
+          style: { height: rowsContainerHeight, width: state.width } },
+        dragKnob,
+        groupHeader,
+        header,
+        rows,
+        footer,
+        topShadow,
+        bottomShadow
+      ),
+      verticalScrollbar,
+      horizontalScrollbar
+    );
+  },
+
+  _renderRows: function _renderRows( /*number*/offsetTop) /*object*/{
+    var state = this.state;
+
+    return React.createElement(FixedDataTableBufferedRows, {
+      isScrolling: this._isScrolling,
+      defaultRowHeight: state.rowHeight,
+      firstRowIndex: state.firstRowIndex,
+      firstRowOffset: state.firstRowOffset,
+      fixedColumns: state.bodyFixedColumns,
+      height: state.bodyHeight,
+      offsetTop: offsetTop,
+      onRowClick: state.onRowClick,
+      onRowDoubleClick: state.onRowDoubleClick,
+      onRowMouseDown: state.onRowMouseDown,
+      onRowMouseEnter: state.onRowMouseEnter,
+      onRowMouseLeave: state.onRowMouseLeave,
+      rowClassNameGetter: state.rowClassNameGetter,
+      rowsCount: state.rowsCount,
+      rowGetter: state.rowGetter,
+      rowHeightGetter: state.rowHeightGetter,
+      scrollLeft: state.scrollX,
+      scrollableColumns: state.bodyScrollableColumns,
+      showLastRowBorder: true,
+      width: state.width,
+      rowPositionGetter: this._scrollHelper.getRowPosition
+    });
+  },
+
+  /**
+   * This is called when a cell that is in the header of a column has its
+   * resizer knob clicked on. It displays the resizer and puts in the correct
+   * location on the table.
+   */
+  _onColumnResize: function _onColumnResize(
+  /*number*/combinedWidth,
+  /*number*/leftOffset,
+  /*number*/cellWidth,
+  /*?number*/cellMinWidth,
+  /*?number*/cellMaxWidth,
+  /*number|string*/columnKey,
+  /*object*/event) {
+    this.setState({
+      isColumnResizing: true,
+      columnResizingData: {
+        left: leftOffset + combinedWidth - cellWidth,
+        width: cellWidth,
+        minWidth: cellMinWidth,
+        maxWidth: cellMaxWidth,
+        initialEvent: {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          preventDefault: emptyFunction
+        },
+        key: columnKey
+      }
+    });
+  },
+
+  _areColumnSettingsIdentical: function _areColumnSettingsIdentical(oldColumns, newColumns) {
+    if (oldColumns.length !== newColumns.length) {
+      return false;
+    }
+    for (var index = 0; index < oldColumns.length; ++index) {
+      if (!shallowEqual(oldColumns[index].props, newColumns[index].props)) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  _populateColumnsAndColumnData: function _populateColumnsAndColumnData(columns, columnGroups, oldState) {
+    var canReuseColumnSettings = false;
+    var canReuseColumnGroupSettings = false;
+
+    if (oldState && oldState.columns) {
+      canReuseColumnSettings = this._areColumnSettingsIdentical(columns, oldState.columns);
+    }
+    if (oldState && oldState.columnGroups && columnGroups) {
+      canReuseColumnGroupSettings = this._areColumnSettingsIdentical(columnGroups, oldState.columnGroups);
+    }
+
+    var columnInfo = {};
+    if (canReuseColumnSettings) {
+      columnInfo.bodyFixedColumns = oldState.bodyFixedColumns;
+      columnInfo.bodyScrollableColumns = oldState.bodyScrollableColumns;
+      columnInfo.headFixedColumns = oldState.headFixedColumns;
+      columnInfo.headScrollableColumns = oldState.headScrollableColumns;
+      columnInfo.footFixedColumns = oldState.footFixedColumns;
+      columnInfo.footScrollableColumns = oldState.footScrollableColumns;
+    } else {
+      var bodyColumnTypes = this._splitColumnTypes(columns);
+      columnInfo.bodyFixedColumns = bodyColumnTypes.fixed;
+      columnInfo.bodyScrollableColumns = bodyColumnTypes.scrollable;
+
+      var headColumnTypes = this._splitColumnTypes(this._selectColumnElement(HEADER, columns));
+      columnInfo.headFixedColumns = headColumnTypes.fixed;
+      columnInfo.headScrollableColumns = headColumnTypes.scrollable;
+
+      var footColumnTypes = this._splitColumnTypes(this._selectColumnElement(FOOTER, columns));
+      columnInfo.footFixedColumns = footColumnTypes.fixed;
+      columnInfo.footScrollableColumns = footColumnTypes.scrollable;
+    }
+
+    if (canReuseColumnGroupSettings) {
+      columnInfo.groupHeaderFixedColumns = oldState.groupHeaderFixedColumns;
+      columnInfo.groupHeaderScrollableColumns = oldState.groupHeaderScrollableColumns;
+    } else {
+      if (columnGroups) {
+        var groupHeaderColumnTypes = this._splitColumnTypes(this._selectColumnElement(HEADER, columnGroups));
+        columnInfo.groupHeaderFixedColumns = groupHeaderColumnTypes.fixed;
+        columnInfo.groupHeaderScrollableColumns = groupHeaderColumnTypes.scrollable;
+      }
+    }
+
+    return columnInfo;
+  },
+
+  _calculateState: function _calculateState( /*object*/props, /*?object*/oldState) /*object*/{
+    invariant(props.height !== undefined || props.maxHeight !== undefined, 'You must set either a height or a maxHeight');
+
+    var children = [];
+    ReactChildren.forEach(props.children, function (child, index) {
+      if (child == null) {
+        return;
+      }
+      invariant(child.type.__TableColumnGroup__ || child.type.__TableColumn__, 'child type should be <FixedDataTableColumn /> or ' + '<FixedDataTableColumnGroup />');
+      children.push(child);
+    });
+
+    var useGroupHeader = false;
+    if (children.length && children[0].type.__TableColumnGroup__) {
+      useGroupHeader = true;
+    }
+
+    var firstRowIndex = oldState && oldState.firstRowIndex || 0;
+    var firstRowOffset = oldState && oldState.firstRowOffset || 0;
+    var scrollX, scrollY;
+    if (oldState && props.overflowX !== 'hidden') {
+      scrollX = oldState.scrollX;
+    } else {
+      scrollX = props.scrollLeft;
+    }
+    if (oldState && props.overflowY !== 'hidden') {
+      scrollY = oldState.scrollY;
+    } else {
+      scrollState = this._scrollHelper.scrollTo(props.scrollTop);
+      firstRowIndex = scrollState.index;
+      firstRowOffset = scrollState.offset;
+      scrollY = scrollState.position;
+    }
+
+    if (this._rowToScrollTo !== undefined) {
+      scrollState = this._scrollHelper.scrollRowIntoView(this._rowToScrollTo);
+      firstRowIndex = scrollState.index;
+      firstRowOffset = scrollState.offset;
+      scrollY = scrollState.position;
+      delete this._rowToScrollTo;
+    }
+
+    var groupHeaderHeight = useGroupHeader ? props.groupHeaderHeight : 0;
+
+    if (oldState && props.rowsCount !== oldState.rowsCount) {
+      // Number of rows changed, try to scroll to the row from before the
+      // change
+      var viewportHeight = (props.height === undefined ? props.maxHeight : props.height) - (props.headerHeight || 0) - (props.footerHeight || 0) - (props.groupHeaderHeight || 0);
+      this._scrollHelper = new FixedDataTableScrollHelper(props.rowsCount, props.rowHeight, viewportHeight, props.rowHeightGetter);
+      var scrollState = this._scrollHelper.scrollToRow(firstRowIndex, firstRowOffset);
+      firstRowIndex = scrollState.index;
+      firstRowOffset = scrollState.offset;
+      scrollY = scrollState.position;
+    } else if (oldState && props.rowHeightGetter !== oldState.rowHeightGetter) {
+      this._scrollHelper.setRowHeightGetter(props.rowHeightGetter);
+    }
+
+    var columnResizingData;
+    if (props.isColumnResizing) {
+      columnResizingData = oldState && oldState.columnResizingData;
+    } else {
+      columnResizingData = EMPTY_OBJECT;
+    }
+
+    var columns;
+    var columnGroups;
+
+    if (useGroupHeader) {
+      var columnGroupSettings = FixedDataTableWidthHelper.adjustColumnGroupWidths(children, props.width);
+      columns = columnGroupSettings.columns;
+      columnGroups = columnGroupSettings.columnGroups;
+    } else {
+      columns = FixedDataTableWidthHelper.adjustColumnWidths(children, props.width);
+    }
+
+    var columnInfo = this._populateColumnsAndColumnData(columns, columnGroups, oldState);
+
+    if (this._columnToScrollTo !== undefined) {
+      // If selected column is a fixed column, don't scroll
+      var fixedColumnsCount = columnInfo.bodyFixedColumns.length;
+      if (this._columnToScrollTo >= fixedColumnsCount) {
+        var totalFixedColumnsWidth = 0;
+        var i, column;
+        for (i = 0; i < columnInfo.bodyFixedColumns.length; ++i) {
+          column = columnInfo.bodyFixedColumns[i];
+          totalFixedColumnsWidth += column.props.width;
+        }
+
+        var scrollableColumnIndex = Math.min(this._columnToScrollTo - fixedColumnsCount, columnInfo.bodyScrollableColumns.length - 1);
+
+        var previousColumnsWidth = 0;
+        for (i = 0; i < scrollableColumnIndex; ++i) {
+          column = columnInfo.bodyScrollableColumns[i];
+          previousColumnsWidth += column.props.width;
+        }
+
+        var availableScrollWidth = props.width - totalFixedColumnsWidth;
+        var selectedColumnWidth = columnInfo.bodyScrollableColumns[scrollableColumnIndex].props.width;
+        var minAcceptableScrollPosition = previousColumnsWidth + selectedColumnWidth - availableScrollWidth;
+
+        if (scrollX < minAcceptableScrollPosition) {
+          scrollX = minAcceptableScrollPosition;
+        }
+
+        if (scrollX > previousColumnsWidth) {
+          scrollX = previousColumnsWidth;
+        }
+      }
+      delete this._columnToScrollTo;
+    }
+
+    var useMaxHeight = props.height === undefined;
+    var height = Math.round(useMaxHeight ? props.maxHeight : props.height);
+    var totalHeightReserved = props.footerHeight + props.headerHeight + groupHeaderHeight + 2 * BORDER_HEIGHT;
+    var bodyHeight = height - totalHeightReserved;
+    var scrollContentHeight = this._scrollHelper.getContentHeight();
+    var totalHeightNeeded = scrollContentHeight + totalHeightReserved;
+    var scrollContentWidth = FixedDataTableWidthHelper.getTotalWidth(columns);
+
+    var horizontalScrollbarVisible = scrollContentWidth > props.width && props.overflowX !== 'hidden';
+
+    if (horizontalScrollbarVisible) {
+      bodyHeight -= Scrollbar.SIZE;
+      totalHeightNeeded += Scrollbar.SIZE;
+      totalHeightReserved += Scrollbar.SIZE;
+    }
+
+    var maxScrollX = Math.max(0, scrollContentWidth - props.width);
+    var maxScrollY = Math.max(0, scrollContentHeight - bodyHeight);
+    scrollX = Math.min(scrollX, maxScrollX);
+    scrollY = Math.min(scrollY, maxScrollY);
+
+    if (!maxScrollY) {
+      // no vertical scrollbar necessary, use the totals we tracked so we
+      // can shrink-to-fit vertically
+      if (useMaxHeight) {
+        height = totalHeightNeeded;
+      }
+      bodyHeight = totalHeightNeeded - totalHeightReserved;
+    }
+
+    this._scrollHelper.setViewportHeight(bodyHeight);
+
+    // The order of elements in this object metters and bringing bodyHeight,
+    // height or useGroupHeader to the top can break various features
+    var newState = _extends({
+      isColumnResizing: oldState && oldState.isColumnResizing }, columnInfo, props, {
+
+      columns: columns,
+      columnGroups: columnGroups,
+      columnResizingData: columnResizingData,
+      firstRowIndex: firstRowIndex,
+      firstRowOffset: firstRowOffset,
+      horizontalScrollbarVisible: horizontalScrollbarVisible,
+      maxScrollX: maxScrollX,
+      maxScrollY: maxScrollY,
+      reservedHeight: totalHeightReserved,
+      scrollContentHeight: scrollContentHeight,
+      scrollX: scrollX,
+      scrollY: scrollY,
+
+      // These properties may overwrite properties defined in
+      // columnInfo and props
+      bodyHeight: bodyHeight,
+      height: height,
+      groupHeaderHeight: groupHeaderHeight,
+      useGroupHeader: useGroupHeader });
+
+    return newState;
+  },
+
+  _selectColumnElement: function _selectColumnElement( /*string*/type, /*array*/columns) /*array*/{
+    var newColumns = [];
+    for (var i = 0; i < columns.length; ++i) {
+      var column = columns[i];
+      newColumns.push(React.cloneElement(column, {
+        cell: type ? column.props[type] : column.props[CELL]
+      }));
+    }
+    return newColumns;
+  },
+
+  _splitColumnTypes: function _splitColumnTypes( /*array*/columns) /*object*/{
+    var fixedColumns = [];
+    var scrollableColumns = [];
+    for (var i = 0; i < columns.length; ++i) {
+      if (columns[i].props.fixed) {
+        fixedColumns.push(columns[i]);
+      } else {
+        scrollableColumns.push(columns[i]);
+      }
+    }
+    return {
+      fixed: fixedColumns,
+      scrollable: scrollableColumns };
+  },
+
+  _onWheel: function _onWheel( /*number*/deltaX, /*number*/deltaY) {
+    if (this.isMounted()) {
+      if (!this._isScrolling) {
+        this._didScrollStart();
+      }
+      var x = this.state.scrollX;
+      if (Math.abs(deltaY) > Math.abs(deltaX) && this.props.overflowY !== 'hidden') {
+        var scrollState = this._scrollHelper.scrollBy(Math.round(deltaY));
+        var maxScrollY = Math.max(0, scrollState.contentHeight - this.state.bodyHeight);
+        this.setState({
+          firstRowIndex: scrollState.index,
+          firstRowOffset: scrollState.offset,
+          scrollY: scrollState.position,
+          scrollContentHeight: scrollState.contentHeight,
+          maxScrollY: maxScrollY });
+      } else if (deltaX && this.props.overflowX !== 'hidden') {
+        x += deltaX;
+        x = x < 0 ? 0 : x;
+        x = x > this.state.maxScrollX ? this.state.maxScrollX : x;
+        this.setState({
+          scrollX: x });
+      }
+
+      this._didScrollStop();
+    }
+  },
+
+  _onHorizontalScroll: function _onHorizontalScroll( /*number*/scrollPos) {
+    if (this.isMounted() && scrollPos !== this.state.scrollX) {
+      if (!this._isScrolling) {
+        this._didScrollStart();
+      }
+      this.setState({
+        scrollX: scrollPos });
+      this._didScrollStop();
+    }
+  },
+
+  _onVerticalScroll: function _onVerticalScroll( /*number*/scrollPos) {
+    if (this.isMounted() && scrollPos !== this.state.scrollY) {
+      if (!this._isScrolling) {
+        this._didScrollStart();
+      }
+      var scrollState = this._scrollHelper.scrollTo(Math.round(scrollPos));
+      this.setState({
+        firstRowIndex: scrollState.index,
+        firstRowOffset: scrollState.offset,
+        scrollY: scrollState.position,
+        scrollContentHeight: scrollState.contentHeight });
+      this._didScrollStop();
+    }
+  },
+
+  _didScrollStart: function _didScrollStart() {
+    if (this.isMounted() && !this._isScrolling) {
+      this._isScrolling = true;
+      if (this.props.onScrollStart) {
+        this.props.onScrollStart(this.state.scrollX, this.state.scrollY);
+      }
+    }
+  },
+
+  _didScrollStop: function _didScrollStop() {
+    if (this.isMounted() && this._isScrolling) {
+      this._isScrolling = false;
+      this.setState({ redraw: true });
+      if (this.props.onScrollEnd) {
+        this.props.onScrollEnd(this.state.scrollX, this.state.scrollY);
+      }
+    }
+  } });
+
+var HorizontalScrollbar = React.createClass({
+  displayName: 'HorizontalScrollbar',
+
+  mixins: [ReactComponentWithPureRenderMixin],
+  propTypes: {
+    contentSize: PropTypes.number.isRequired,
+    offset: PropTypes.number.isRequired,
+    onScroll: PropTypes.func.isRequired,
+    position: PropTypes.number.isRequired,
+    size: PropTypes.number.isRequired },
+
+  render: function render() /*object*/{
+    var outerContainerStyle = {
+      height: Scrollbar.SIZE,
+      width: this.props.size };
+    var innerContainerStyle = {
+      height: Scrollbar.SIZE,
+      position: 'absolute',
+      overflow: 'hidden',
+      width: this.props.size };
+    translateDOMPositionXY(innerContainerStyle, 0, this.props.offset);
+
+    return React.createElement(
+      'div',
+      {
+        className: joinClasses(cx('fixedDataTableLayout/horizontalScrollbar'), cx('public/fixedDataTable/horizontalScrollbar')),
+        style: outerContainerStyle },
+      React.createElement(
+        'div',
+        { style: innerContainerStyle },
+        React.createElement(Scrollbar, _extends({}, this.props, {
+          isOpaque: true,
+          orientation: 'horizontal',
+          offset: undefined
+        }))
+      )
+    );
+  } });
+
+module.exports = FixedDataTable;
+
+// isColumnResizing should be overwritten by value from props if
+// avaialble
+},{"./FixedDataTableBufferedRows.react":9,"./FixedDataTableColumnResizeHandle.react":18,"./FixedDataTableRow.react":22,"./FixedDataTableScrollHelper":24,"./FixedDataTableWidthHelper":25,"./React":31,"./ReactComponentWithPureRenderMixin":32,"./ReactWheelHandler":34,"./Scrollbar.react":35,"./cx":41,"./debounceCore":42,"./emptyFunction":43,"./invariant":45,"./joinClasses":47,"./shallowEqual":51,"./translateDOMPositionXY":52}],21:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableRoot
+ */
+
+'use strict';
+
+var FixedDataTable = require('./FixedDataTable.react');
+var FixedDataTableCellDefault = require('./FixedDataTableCellDefault.react');
+var FixedDataTableColumn = require('./FixedDataTableColumn.react');
+var FixedDataTableColumnGroup = require('./FixedDataTableColumnGroup.react');
+
+var FixedDataTableRoot = {
+  Cell: FixedDataTableCellDefault,
+  Column: FixedDataTableColumn,
+  ColumnGroup: FixedDataTableColumnGroup,
+  Table: FixedDataTable };
+
+FixedDataTableRoot.version = '0.6.0';
+module.exports = FixedDataTableRoot;
+},{"./FixedDataTable.react":8,"./FixedDataTableCellDefault.react":11,"./FixedDataTableColumn.react":14,"./FixedDataTableColumnGroup.react":15}],22:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableRow.react
+ * @typechecks
+ */
+
+'use strict';
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var React = require('./React');
+var FixedDataTableCellGroup = require('./FixedDataTableCellGroup.react');
+
+var cx = require('./cx');
+var joinClasses = require('./joinClasses');
+var translateDOMPositionXY = require('./translateDOMPositionXY');
+
+var PropTypes = React.PropTypes;
+
+/**
+ * Component that renders the row for <FixedDataTable />.
+ * This component should not be used directly by developer. Instead,
+ * only <FixedDataTable /> should use the component internally.
+ */
+var FixedDataTableRowImpl = React.createClass({
+  displayName: 'FixedDataTableRowImpl',
+
+  propTypes: {
+
+    isScrolling: PropTypes.bool,
+
+    /**
+     * Array of <FixedDataTableColumn /> for the fixed columns.
+     */
+    fixedColumns: PropTypes.array.isRequired,
+
+    /**
+     * Height of the row.
+     */
+    height: PropTypes.number.isRequired,
+
+    /**
+     * The row index.
+     */
+    index: PropTypes.number.isRequired,
+
+    /**
+     * Array of <FixedDataTableColumn /> for the scrollable columns.
+     */
+    scrollableColumns: PropTypes.array.isRequired,
+
+    /**
+     * The distance between the left edge of the table and the leftmost portion
+     * of the row currently visible in the table.
+     */
+    scrollLeft: PropTypes.number.isRequired,
+
+    /**
+     * Width of the row.
+     */
+    width: PropTypes.number.isRequired,
+
+    /**
+     * Fire when a row is clicked.
+     */
+    onClick: PropTypes.func,
+
+    /**
+     * Fire when a row is double clicked.
+     */
+    onDoubleClick: PropTypes.func,
+
+    /**
+     * Callback for when resizer knob (in FixedDataTableCell) is clicked
+     * to initialize resizing. Please note this is only on the cells
+     * in the header.
+     * @param number combinedWidth
+     * @param number leftOffset
+     * @param number cellWidth
+     * @param number|string columnKey
+     * @param object event
+     */
+    onColumnResize: PropTypes.func },
+
+  render: function render() /*object*/{
+    var style = {
+      width: this.props.width,
+      height: this.props.height };
+
+    var className = cx({
+      'fixedDataTableRowLayout/main': true,
+      'public/fixedDataTableRow/main': true,
+      'public/fixedDataTableRow/highlighted': this.props.index % 2 === 1,
+      'public/fixedDataTableRow/odd': this.props.index % 2 === 1,
+      'public/fixedDataTableRow/even': this.props.index % 2 === 0 });
+
+    var fixedColumnsWidth = this._getColumnsWidth(this.props.fixedColumns);
+    var fixedColumns = React.createElement(FixedDataTableCellGroup, {
+      key: 'fixed_cells',
+      isScrolling: this.props.isScrolling,
+      height: this.props.height,
+      left: 0,
+      width: fixedColumnsWidth,
+      zIndex: 2,
+      columns: this.props.fixedColumns,
+      onColumnResize: this.props.onColumnResize,
+      rowHeight: this.props.height,
+      rowIndex: this.props.index
+    });
+    var columnsShadow = this._renderColumnsShadow(fixedColumnsWidth);
+    var scrollableColumns = React.createElement(FixedDataTableCellGroup, {
+      key: 'scrollable_cells',
+      isScrolling: this.props.isScrolling,
+      height: this.props.height,
+      left: this.props.scrollLeft,
+      offsetLeft: fixedColumnsWidth,
+      width: this.props.width - fixedColumnsWidth,
+      zIndex: 0,
+      columns: this.props.scrollableColumns,
+      onColumnResize: this.props.onColumnResize,
+      rowHeight: this.props.height,
+      rowIndex: this.props.index
+    });
+
+    return React.createElement(
+      'div',
+      {
+        className: joinClasses(className, this.props.className),
+        onClick: this.props.onClick ? this._onClick : null,
+        onDoubleClick: this.props.onDoubleClick ? this._onDoubleClick : null,
+        onMouseDown: this.props.onMouseDown ? this._onMouseDown : null,
+        onMouseEnter: this.props.onMouseEnter ? this._onMouseEnter : null,
+        onMouseLeave: this.props.onMouseLeave ? this._onMouseLeave : null,
+        style: style },
+      React.createElement(
+        'div',
+        { className: cx('fixedDataTableRowLayout/body') },
+        fixedColumns,
+        scrollableColumns,
+        columnsShadow
+      )
+    );
+  },
+
+  _getColumnsWidth: function _getColumnsWidth( /*array*/columns) /*number*/{
+    var width = 0;
+    for (var i = 0; i < columns.length; ++i) {
+      width += columns[i].props.width;
+    }
+    return width;
+  },
+
+  _renderColumnsShadow: function _renderColumnsShadow( /*number*/left) /*?object*/{
+    if (left > 0) {
+      var className = cx({
+        'fixedDataTableRowLayout/fixedColumnsDivider': true,
+        'fixedDataTableRowLayout/columnsShadow': this.props.scrollLeft > 0,
+        'public/fixedDataTableRow/fixedColumnsDivider': true,
+        'public/fixedDataTableRow/columnsShadow': this.props.scrollLeft > 0 });
+      var style = {
+        left: left,
+        height: this.props.height
+      };
+      return React.createElement('div', { className: className, style: style });
+    }
+  },
+
+  _onClick: function _onClick( /*object*/event) {
+    this.props.onClick(event, this.props.index);
+  },
+
+  _onDoubleClick: function _onDoubleClick( /*object*/event) {
+    this.props.onDoubleClick(event, this.props.index);
+  },
+
+  _onMouseDown: function _onMouseDown( /*object*/event) {
+    this.props.onMouseDown(event, this.props.index);
+  },
+
+  _onMouseEnter: function _onMouseEnter( /*object*/event) {
+    this.props.onMouseEnter(event, this.props.index);
+  },
+
+  _onMouseLeave: function _onMouseLeave( /*object*/event) {
+    this.props.onMouseLeave(event, this.props.index);
+  } });
+
+var FixedDataTableRow = React.createClass({
+  displayName: 'FixedDataTableRow',
+
+  propTypes: {
+
+    isScrolling: PropTypes.bool,
+
+    /**
+     * Height of the row.
+     */
+    height: PropTypes.number.isRequired,
+
+    /**
+     * Z-index on which the row will be displayed. Used e.g. for keeping
+     * header and footer in front of other rows.
+     */
+    zIndex: PropTypes.number,
+
+    /**
+     * The vertical position where the row should render itself
+     */
+    offsetTop: PropTypes.number.isRequired,
+
+    /**
+     * Width of the row.
+     */
+    width: PropTypes.number.isRequired },
+
+  render: function render() /*object*/{
+    var style = {
+      width: this.props.width,
+      height: this.props.height,
+      zIndex: this.props.zIndex ? this.props.zIndex : 0 };
+    translateDOMPositionXY(style, 0, this.props.offsetTop);
+
+    return React.createElement(
+      'div',
+      {
+        style: style,
+        className: cx('fixedDataTableRowLayout/rowWrapper') },
+      React.createElement(FixedDataTableRowImpl, _extends({}, this.props, {
+        offsetTop: undefined,
+        zIndex: undefined
+      }))
+    );
+  } });
+
+module.exports = FixedDataTableRow;
+},{"./FixedDataTableCellGroup.react":12,"./React":31,"./cx":41,"./joinClasses":47,"./translateDOMPositionXY":52}],23:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableRowBuffer
+ * @typechecks
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+var IntegerBufferSet = require('./IntegerBufferSet');
+
+var clamp = require('./clamp');
+var invariant = require('./invariant');
+var MIN_BUFFER_ROWS = 3;
+var MAX_BUFFER_ROWS = 6;
+
+// FixedDataTableRowBuffer is a helper class that executes row buffering
+// logic for FixedDataTable. It figures out which rows should be rendered
+// and in which positions.
+
+var FixedDataTableRowBuffer = (function () {
+  function FixedDataTableRowBuffer(
+  /*number*/rowsCount,
+  /*number*/defaultRowHeight,
+  /*number*/viewportHeight,
+  /*?function*/rowHeightGetter) {
+    _classCallCheck(this, FixedDataTableRowBuffer);
+
+    invariant(defaultRowHeight !== 0, 'defaultRowHeight musn\'t be equal 0 in FixedDataTableRowBuffer');
+
+    this._bufferSet = new IntegerBufferSet();
+    this._defaultRowHeight = defaultRowHeight;
+    this._viewportRowsBegin = 0;
+    this._viewportRowsEnd = 0;
+    this._maxVisibleRowCount = Math.ceil(viewportHeight / defaultRowHeight) + 1;
+    this._bufferRowsCount = clamp(Math.floor(this._maxVisibleRowCount / 2), MIN_BUFFER_ROWS, MAX_BUFFER_ROWS);
+    this._rowsCount = rowsCount;
+    this._rowHeightGetter = rowHeightGetter;
+    this._rows = [];
+    this._viewportHeight = viewportHeight;
+
+    this.getRows = this.getRows.bind(this);
+    this.getRowsWithUpdatedBuffer = this.getRowsWithUpdatedBuffer.bind(this);
+  }
+
+  _createClass(FixedDataTableRowBuffer, [{
+    key: 'getRowsWithUpdatedBuffer',
+    value: function getRowsWithUpdatedBuffer() /*array*/{
+      var remainingBufferRows = 2 * this._bufferRowsCount;
+      var bufferRowIndex = Math.max(this._viewportRowsBegin - this._bufferRowsCount, 0);
+      while (bufferRowIndex < this._viewportRowsBegin) {
+        this._addRowToBuffer(bufferRowIndex, this._viewportRowsBegin, this._viewportRowsEnd - 1);
+        bufferRowIndex++;
+        remainingBufferRows--;
+      }
+      bufferRowIndex = this._viewportRowsEnd;
+      while (bufferRowIndex < this._rowsCount && remainingBufferRows > 0) {
+        this._addRowToBuffer(bufferRowIndex, this._viewportRowsBegin, this._viewportRowsEnd - 1);
+        bufferRowIndex++;
+        remainingBufferRows--;
+      }
+      return this._rows;
+    }
+  }, {
+    key: 'getRows',
+    value: function getRows(
+    /*number*/firstRowIndex,
+    /*number*/firstRowOffset) /*array*/{
+      var top = firstRowOffset;
+      var totalHeight = top;
+      var rowIndex = firstRowIndex;
+      var endIndex = Math.min(firstRowIndex + this._maxVisibleRowCount, this._rowsCount);
+
+      this._viewportRowsBegin = firstRowIndex;
+      while (rowIndex < endIndex || totalHeight < this._viewportHeight && rowIndex < this._rowsCount) {
+        this._addRowToBuffer(rowIndex, firstRowIndex, endIndex - 1);
+        totalHeight += this._rowHeightGetter(rowIndex);
+        ++rowIndex;
+        // Store index after the last viewport row as end, to be able to
+        // distinguish when there are no rows rendered in viewport
+        this._viewportRowsEnd = rowIndex;
+      }
+
+      return this._rows;
+    }
+  }, {
+    key: '_addRowToBuffer',
+    value: function _addRowToBuffer(
+    /*number*/rowIndex,
+    /*number*/firstViewportRowIndex,
+    /*number*/lastViewportRowIndex) {
+      var rowPosition = this._bufferSet.getValuePosition(rowIndex);
+      var viewportRowsCount = lastViewportRowIndex - firstViewportRowIndex + 1;
+      var allowedRowsCount = viewportRowsCount + this._bufferRowsCount * 2;
+      if (rowPosition === null && this._bufferSet.getSize() >= allowedRowsCount) {
+        rowPosition = this._bufferSet.replaceFurthestValuePosition(firstViewportRowIndex, lastViewportRowIndex, rowIndex);
+      }
+      if (rowPosition === null) {
+        // We can't reuse any of existing positions for this row. We have to
+        // create new position
+        rowPosition = this._bufferSet.getNewPositionForValue(rowIndex);
+        this._rows[rowPosition] = rowIndex;
+      } else {
+        // This row already is in the table with rowPosition position or it
+        // can replace row that is in that position
+        this._rows[rowPosition] = rowIndex;
+      }
+    }
+  }]);
+
+  return FixedDataTableRowBuffer;
+})();
+
+module.exports = FixedDataTableRowBuffer;
+},{"./IntegerBufferSet":27,"./clamp":39,"./invariant":45}],24:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableScrollHelper
+ * @typechecks
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+var PrefixIntervalTree = require('./PrefixIntervalTree');
+var clamp = require('./clamp');
+
+var BUFFER_ROWS = 5;
+var NO_ROWS_SCROLL_RESULT = {
+  index: 0,
+  offset: 0,
+  position: 0,
+  contentHeight: 0 };
+
+var FixedDataTableScrollHelper = (function () {
+  function FixedDataTableScrollHelper(
+  /*number*/rowCount,
+  /*number*/defaultRowHeight,
+  /*number*/viewportHeight,
+  /*?function*/rowHeightGetter) {
+    _classCallCheck(this, FixedDataTableScrollHelper);
+
+    this._rowOffsets = PrefixIntervalTree.uniform(rowCount, defaultRowHeight);
+    this._storedHeights = new Array(rowCount);
+    for (var i = 0; i < rowCount; ++i) {
+      this._storedHeights[i] = defaultRowHeight;
+    }
+    this._rowCount = rowCount;
+    this._position = 0;
+    this._contentHeight = rowCount * defaultRowHeight;
+    this._defaultRowHeight = defaultRowHeight;
+    this._rowHeightGetter = rowHeightGetter ? rowHeightGetter : function () {
+      return defaultRowHeight;
+    };
+    this._viewportHeight = viewportHeight;
+    this.scrollRowIntoView = this.scrollRowIntoView.bind(this);
+    this.setViewportHeight = this.setViewportHeight.bind(this);
+    this.scrollBy = this.scrollBy.bind(this);
+    this.scrollTo = this.scrollTo.bind(this);
+    this.scrollToRow = this.scrollToRow.bind(this);
+    this.setRowHeightGetter = this.setRowHeightGetter.bind(this);
+    this.getContentHeight = this.getContentHeight.bind(this);
+    this.getRowPosition = this.getRowPosition.bind(this);
+
+    this._updateHeightsInViewport(0, 0);
+  }
+
+  _createClass(FixedDataTableScrollHelper, [{
+    key: 'setRowHeightGetter',
+    value: function setRowHeightGetter( /*function*/rowHeightGetter) {
+      this._rowHeightGetter = rowHeightGetter;
+    }
+  }, {
+    key: 'setViewportHeight',
+    value: function setViewportHeight( /*number*/viewportHeight) {
+      this._viewportHeight = viewportHeight;
+    }
+  }, {
+    key: 'getContentHeight',
+    value: function getContentHeight() /*number*/{
+      return this._contentHeight;
+    }
+  }, {
+    key: '_updateHeightsInViewport',
+    value: function _updateHeightsInViewport(
+    /*number*/firstRowIndex,
+    /*number*/firstRowOffset) {
+      var top = firstRowOffset;
+      var index = firstRowIndex;
+      while (top <= this._viewportHeight && index < this._rowCount) {
+        this._updateRowHeight(index);
+        top += this._storedHeights[index];
+        index++;
+      }
+    }
+  }, {
+    key: '_updateHeightsAboveViewport',
+    value: function _updateHeightsAboveViewport( /*number*/firstRowIndex) {
+      var index = firstRowIndex - 1;
+      while (index >= 0 && index >= firstRowIndex - BUFFER_ROWS) {
+        var delta = this._updateRowHeight(index);
+        this._position += delta;
+        index--;
+      }
+    }
+  }, {
+    key: '_updateRowHeight',
+    value: function _updateRowHeight( /*number*/rowIndex) /*number*/{
+      if (rowIndex < 0 || rowIndex >= this._rowCount) {
+        return 0;
+      }
+      var newHeight = this._rowHeightGetter(rowIndex);
+      if (newHeight !== this._storedHeights[rowIndex]) {
+        var change = newHeight - this._storedHeights[rowIndex];
+        this._rowOffsets.set(rowIndex, newHeight);
+        this._storedHeights[rowIndex] = newHeight;
+        this._contentHeight += change;
+        return change;
+      }
+      return 0;
+    }
+  }, {
+    key: 'getRowPosition',
+    value: function getRowPosition( /*number*/rowIndex) /*number*/{
+      this._updateRowHeight(rowIndex);
+      return this._rowOffsets.sumUntil(rowIndex);
+    }
+  }, {
+    key: 'scrollBy',
+    value: function scrollBy( /*number*/delta) /*object*/{
+      if (this._rowCount === 0) {
+        return NO_ROWS_SCROLL_RESULT;
+      }
+      var firstRow = this._rowOffsets.greatestLowerBound(this._position);
+      firstRow = clamp(firstRow, 0, Math.max(this._rowCount - 1, 0));
+      var firstRowPosition = this._rowOffsets.sumUntil(firstRow);
+      var rowIndex = firstRow;
+      var position = this._position;
+
+      var rowHeightChange = this._updateRowHeight(rowIndex);
+      if (firstRowPosition !== 0) {
+        position += rowHeightChange;
+      }
+      var visibleRowHeight = this._storedHeights[rowIndex] - (position - firstRowPosition);
+
+      if (delta >= 0) {
+
+        while (delta > 0 && rowIndex < this._rowCount) {
+          if (delta < visibleRowHeight) {
+            position += delta;
+            delta = 0;
+          } else {
+            delta -= visibleRowHeight;
+            position += visibleRowHeight;
+            rowIndex++;
+          }
+          if (rowIndex < this._rowCount) {
+            this._updateRowHeight(rowIndex);
+            visibleRowHeight = this._storedHeights[rowIndex];
+          }
+        }
+      } else if (delta < 0) {
+        delta = -delta;
+        var invisibleRowHeight = this._storedHeights[rowIndex] - visibleRowHeight;
+
+        while (delta > 0 && rowIndex >= 0) {
+          if (delta < invisibleRowHeight) {
+            position -= delta;
+            delta = 0;
+          } else {
+            position -= invisibleRowHeight;
+            delta -= invisibleRowHeight;
+            rowIndex--;
+          }
+          if (rowIndex >= 0) {
+            var change = this._updateRowHeight(rowIndex);
+            invisibleRowHeight = this._storedHeights[rowIndex];
+            position += change;
+          }
+        }
+      }
+
+      var maxPosition = this._contentHeight - this._viewportHeight;
+      position = clamp(position, 0, maxPosition);
+      this._position = position;
+      var firstRowIndex = this._rowOffsets.greatestLowerBound(position);
+      firstRowIndex = clamp(firstRowIndex, 0, Math.max(this._rowCount - 1, 0));
+      firstRowPosition = this._rowOffsets.sumUntil(firstRowIndex);
+      var firstRowOffset = firstRowPosition - position;
+
+      this._updateHeightsInViewport(firstRowIndex, firstRowOffset);
+      this._updateHeightsAboveViewport(firstRowIndex);
+
+      return {
+        index: firstRowIndex,
+        offset: firstRowOffset,
+        position: this._position,
+        contentHeight: this._contentHeight };
+    }
+  }, {
+    key: '_getRowAtEndPosition',
+    value: function _getRowAtEndPosition( /*number*/rowIndex) /*number*/{
+      // We need to update enough rows above the selected one to be sure that when
+      // we scroll to selected position all rows between first shown and selected
+      // one have most recent heights computed and will not resize
+      this._updateRowHeight(rowIndex);
+      var currentRowIndex = rowIndex;
+      var top = this._storedHeights[currentRowIndex];
+      while (top < this._viewportHeight && currentRowIndex >= 0) {
+        currentRowIndex--;
+        if (currentRowIndex >= 0) {
+          this._updateRowHeight(currentRowIndex);
+          top += this._storedHeights[currentRowIndex];
+        }
+      }
+      var position = this._rowOffsets.sumTo(rowIndex) - this._viewportHeight;
+      if (position < 0) {
+        position = 0;
+      }
+      return position;
+    }
+  }, {
+    key: 'scrollTo',
+    value: function scrollTo( /*number*/position) /*object*/{
+      if (this._rowCount === 0) {
+        return NO_ROWS_SCROLL_RESULT;
+      }
+      if (position <= 0) {
+        // If position less than or equal to 0 first row should be fully visible
+        // on top
+        this._position = 0;
+        this._updateHeightsInViewport(0, 0);
+
+        return {
+          index: 0,
+          offset: 0,
+          position: this._position,
+          contentHeight: this._contentHeight };
+      } else if (position >= this._contentHeight - this._viewportHeight) {
+        // If position is equal to or greater than max scroll value, we need
+        // to make sure to have bottom border of last row visible.
+        var rowIndex = this._rowCount - 1;
+        position = this._getRowAtEndPosition(rowIndex);
+      }
+      this._position = position;
+
+      var firstRowIndex = this._rowOffsets.greatestLowerBound(position);
+      firstRowIndex = clamp(firstRowIndex, 0, Math.max(this._rowCount - 1, 0));
+      var firstRowPosition = this._rowOffsets.sumUntil(firstRowIndex);
+      var firstRowOffset = firstRowPosition - position;
+
+      this._updateHeightsInViewport(firstRowIndex, firstRowOffset);
+      this._updateHeightsAboveViewport(firstRowIndex);
+
+      return {
+        index: firstRowIndex,
+        offset: firstRowOffset,
+        position: this._position,
+        contentHeight: this._contentHeight };
+    }
+  }, {
+    key: 'scrollToRow',
+
+    /**
+     * Allows to scroll to selected row with specified offset. It always
+     * brings that row to top of viewport with that offset
+     */
+    value: function scrollToRow( /*number*/rowIndex, /*number*/offset) /*object*/{
+      rowIndex = clamp(rowIndex, 0, Math.max(this._rowCount - 1, 0));
+      offset = clamp(offset, -this._storedHeights[rowIndex], 0);
+      var firstRow = this._rowOffsets.sumUntil(rowIndex);
+      return this.scrollTo(firstRow - offset);
+    }
+  }, {
+    key: 'scrollRowIntoView',
+
+    /**
+     * Allows to scroll to selected row by bringing it to viewport with minimal
+     * scrolling. This that if row is fully visible, scroll will not be changed.
+     * If top border of row is above top of viewport it will be scrolled to be
+     * fully visible on the top of viewport. If the bottom border of row is
+     * below end of viewport, it will be scrolled up to be fully visible on the
+     * bottom of viewport.
+     */
+    value: function scrollRowIntoView( /*number*/rowIndex) /*object*/{
+      rowIndex = clamp(rowIndex, 0, Math.max(this._rowCount - 1, 0));
+      var rowBegin = this._rowOffsets.sumUntil(rowIndex);
+      var rowEnd = rowBegin + this._storedHeights[rowIndex];
+      if (rowBegin < this._position) {
+        return this.scrollTo(rowBegin);
+      } else if (this._position + this._viewportHeight < rowEnd) {
+        var position = this._getRowAtEndPosition(rowIndex);
+        return this.scrollTo(position);
+      }
+      return this.scrollTo(this._position);
+    }
+  }]);
+
+  return FixedDataTableScrollHelper;
+})();
+
+module.exports = FixedDataTableScrollHelper;
+},{"./PrefixIntervalTree":30,"./clamp":39}],25:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule FixedDataTableWidthHelper
+ * @typechecks
+ */
+
+'use strict';
+
+var React = require('./React');
+
+function getTotalWidth( /*array*/columns) /*number*/{
+  var totalWidth = 0;
+  for (var i = 0; i < columns.length; ++i) {
+    totalWidth += columns[i].props.width;
+  }
+  return totalWidth;
+}
+
+function getTotalFlexGrow( /*array*/columns) /*number*/{
+  var totalFlexGrow = 0;
+  for (var i = 0; i < columns.length; ++i) {
+    totalFlexGrow += columns[i].props.flexGrow || 0;
+  }
+  return totalFlexGrow;
+}
+
+function distributeFlexWidth(
+/*array*/columns,
+/*number*/flexWidth) /*object*/{
+  if (flexWidth <= 0) {
+    return {
+      columns: columns,
+      width: getTotalWidth(columns) };
+  }
+  var remainingFlexGrow = getTotalFlexGrow(columns);
+  var remainingFlexWidth = flexWidth;
+  var newColumns = [];
+  var totalWidth = 0;
+  for (var i = 0; i < columns.length; ++i) {
+    var column = columns[i];
+    if (!column.props.flexGrow) {
+      totalWidth += column.props.width;
+      newColumns.push(column);
+      continue;
+    }
+    var columnFlexWidth = Math.floor(column.props.flexGrow / remainingFlexGrow * remainingFlexWidth);
+    var newColumnWidth = Math.floor(column.props.width + columnFlexWidth);
+    totalWidth += newColumnWidth;
+
+    remainingFlexGrow -= column.props.flexGrow;
+    remainingFlexWidth -= columnFlexWidth;
+
+    newColumns.push(React.cloneElement(column, { width: newColumnWidth }));
+  }
+
+  return {
+    columns: newColumns,
+    width: totalWidth };
+}
+
+function adjustColumnGroupWidths(
+/*array*/columnGroups,
+/*number*/expectedWidth) /*object*/{
+  var allColumns = [];
+  var i;
+  for (i = 0; i < columnGroups.length; ++i) {
+    React.Children.forEach(columnGroups[i].props.children, function (column) {
+      allColumns.push(column);
+    });
+  }
+  var columnsWidth = getTotalWidth(allColumns);
+  var remainingFlexGrow = getTotalFlexGrow(allColumns);
+  var remainingFlexWidth = Math.max(expectedWidth - columnsWidth, 0);
+
+  var newAllColumns = [];
+  var newColumnGroups = [];
+
+  for (i = 0; i < columnGroups.length; ++i) {
+    var columnGroup = columnGroups[i];
+    var currentColumns = [];
+
+    React.Children.forEach(columnGroup.props.children, function (column) {
+      currentColumns.push(column);
+    });
+
+    var columnGroupFlexGrow = getTotalFlexGrow(currentColumns);
+    var columnGroupFlexWidth = Math.floor(columnGroupFlexGrow / remainingFlexGrow * remainingFlexWidth);
+
+    var newColumnSettings = distributeFlexWidth(currentColumns, columnGroupFlexWidth);
+
+    remainingFlexGrow -= columnGroupFlexGrow;
+    remainingFlexWidth -= columnGroupFlexWidth;
+
+    for (var j = 0; j < newColumnSettings.columns.length; ++j) {
+      newAllColumns.push(newColumnSettings.columns[j]);
+    }
+
+    newColumnGroups.push(React.cloneElement(columnGroup, { width: newColumnSettings.width }));
+  }
+
+  return {
+    columns: newAllColumns,
+    columnGroups: newColumnGroups };
+}
+
+function adjustColumnWidths(
+/*array*/columns,
+/*number*/expectedWidth) /*array*/{
+  var columnsWidth = getTotalWidth(columns);
+  if (columnsWidth < expectedWidth) {
+    return distributeFlexWidth(columns, expectedWidth - columnsWidth).columns;
+  }
+  return columns;
+}
+
+var FixedDataTableWidthHelper = {
+  getTotalWidth: getTotalWidth,
+  getTotalFlexGrow: getTotalFlexGrow,
+  distributeFlexWidth: distributeFlexWidth,
+  adjustColumnWidths: adjustColumnWidths,
+  adjustColumnGroupWidths: adjustColumnGroupWidths };
+
+module.exports = FixedDataTableWidthHelper;
+},{"./React":31}],26:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule Heap
+ * @typechecks
+ * @preventMunge
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+/*
+ * @param {*} a
+ * @param {*} b
+ * @return {boolean}
+ */
+function defaultComparator(a, b) {
+  return a < b;
+}
+
+var Heap = (function () {
+  function Heap(items, comparator) {
+    _classCallCheck(this, Heap);
+
+    this._items = items || [];
+    this._size = this._items.length;
+    this._comparator = comparator || defaultComparator;
+    this._heapify();
+  }
+
+  _createClass(Heap, [{
+    key: 'empty',
+
+    /*
+     * @return {boolean}
+     */
+    value: function empty() {
+      return this._size === 0;
+    }
+  }, {
+    key: 'pop',
+
+    /*
+     * @return {*}
+     */
+    value: function pop() {
+      if (this._size === 0) {
+        return;
+      }
+
+      var elt = this._items[0];
+
+      var lastElt = this._items.pop();
+      this._size--;
+
+      if (this._size > 0) {
+        this._items[0] = lastElt;
+        this._sinkDown(0);
+      }
+
+      return elt;
+    }
+  }, {
+    key: 'push',
+
+    /*
+     * @param {*} item
+     */
+    value: function push(item) {
+      this._items[this._size++] = item;
+      this._bubbleUp(this._size - 1);
+    }
+  }, {
+    key: 'size',
+
+    /*
+     * @return {number}
+     */
+    value: function size() {
+      return this._size;
+    }
+  }, {
+    key: 'peek',
+
+    /*
+     * @return {*}
+     */
+    value: function peek() {
+      if (this._size === 0) {
+        return;
+      }
+
+      return this._items[0];
+    }
+  }, {
+    key: '_heapify',
+    value: function _heapify() {
+      for (var index = Math.floor((this._size + 1) / 2); index >= 0; index--) {
+        this._sinkDown(index);
+      }
+    }
+  }, {
+    key: '_bubbleUp',
+
+    /*
+     * @parent {number} index
+     */
+    value: function _bubbleUp(index) {
+      var elt = this._items[index];
+      while (index > 0) {
+        var parentIndex = Math.floor((index + 1) / 2) - 1;
+        var parentElt = this._items[parentIndex];
+
+        // if parentElt < elt, stop
+        if (this._comparator(parentElt, elt)) {
+          return;
+        }
+
+        // swap
+        this._items[parentIndex] = elt;
+        this._items[index] = parentElt;
+        index = parentIndex;
+      }
+    }
+  }, {
+    key: '_sinkDown',
+
+    /*
+     * @parent {number} index
+     */
+    value: function _sinkDown(index) {
+      var elt = this._items[index];
+
+      while (true) {
+        var leftChildIndex = 2 * (index + 1) - 1;
+        var rightChildIndex = 2 * (index + 1);
+        var swapIndex = -1;
+
+        if (leftChildIndex < this._size) {
+          var leftChild = this._items[leftChildIndex];
+          if (this._comparator(leftChild, elt)) {
+            swapIndex = leftChildIndex;
+          }
+        }
+
+        if (rightChildIndex < this._size) {
+          var rightChild = this._items[rightChildIndex];
+          if (this._comparator(rightChild, elt)) {
+            if (swapIndex === -1 || this._comparator(rightChild, this._items[swapIndex])) {
+              swapIndex = rightChildIndex;
+            }
+          }
+        }
+
+        // if we don't have a swap, stop
+        if (swapIndex === -1) {
+          return;
+        }
+
+        this._items[index] = this._items[swapIndex];
+        this._items[swapIndex] = elt;
+        index = swapIndex;
+      }
+    }
+  }]);
+
+  return Heap;
+})();
+
+module.exports = Heap;
+},{}],27:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule IntegerBufferSet
+ * @typechecks
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+var Heap = require('./Heap');
+
+var invariant = require('./invariant');
+
+// Data structure that allows to store values and assign positions to them
+// in a way to minimize changing positions of stored values when new ones are
+// added or when some values are replaced. Stored elements are alwasy assigned
+// a consecutive set of positoins startin from 0 up to count of elements less 1
+// Following actions can be executed
+// * get position assigned to given value (null if value is not stored)
+// * create new entry for new value and get assigned position back
+// * replace value that is furthest from specified value range with new value
+//   and get it's position back
+// All operations take amortized log(n) time where n is number of elements in
+// the set.
+
+var IntegerBufferSet = (function () {
+  function IntegerBufferSet() {
+    _classCallCheck(this, IntegerBufferSet);
+
+    this._valueToPositionMap = {};
+    this._size = 0;
+    this._smallValues = new Heap([], // Initial data in the heap
+    this._smallerComparator);
+    this._largeValues = new Heap([], // Initial data in the heap
+    this._greaterComparator);
+
+    this.getNewPositionForValue = this.getNewPositionForValue.bind(this);
+    this.getValuePosition = this.getValuePosition.bind(this);
+    this.getSize = this.getSize.bind(this);
+    this.replaceFurthestValuePosition = this.replaceFurthestValuePosition.bind(this);
+  }
+
+  _createClass(IntegerBufferSet, [{
+    key: 'getSize',
+    value: function getSize() /*number*/{
+      return this._size;
+    }
+  }, {
+    key: 'getValuePosition',
+    value: function getValuePosition( /*number*/value) /*?number*/{
+      if (this._valueToPositionMap[value] === undefined) {
+        return null;
+      }
+      return this._valueToPositionMap[value];
+    }
+  }, {
+    key: 'getNewPositionForValue',
+    value: function getNewPositionForValue( /*number*/value) /*number*/{
+      invariant(this._valueToPositionMap[value] === undefined, 'Shouldn\'t try to find new position for value already stored in BufferSet');
+      var newPosition = this._size;
+      this._size++;
+      this._pushToHeaps(newPosition, value);
+      this._valueToPositionMap[value] = newPosition;
+      return newPosition;
+    }
+  }, {
+    key: 'replaceFurthestValuePosition',
+    value: function replaceFurthestValuePosition(
+    /*number*/lowValue,
+    /*number*/highValue,
+    /*number*/newValue) /*?number*/{
+      invariant(this._valueToPositionMap[newValue] === undefined, 'Shouldn\'t try to replace values with value already stored value in ' + 'BufferSet');
+
+      this._cleanHeaps();
+      if (this._smallValues.empty() || this._largeValues.empty()) {
+        // Threre are currently no values stored. We will have to create new
+        // position for this value.
+        return null;
+      }
+
+      var minValue = this._smallValues.peek().value;
+      var maxValue = this._largeValues.peek().value;
+      if (minValue >= lowValue && maxValue <= highValue) {
+        // All values currently stored are necessary, we can't reuse any of them.
+        return null;
+      }
+
+      var valueToReplace;
+      if (lowValue - minValue > maxValue - highValue) {
+        // minValue is further from provided range. We will reuse it's position.
+        valueToReplace = minValue;
+        this._smallValues.pop();
+      } else {
+        valueToReplace = maxValue;
+        this._largeValues.pop();
+      }
+      var position = this._valueToPositionMap[valueToReplace];
+      delete this._valueToPositionMap[valueToReplace];
+      this._valueToPositionMap[newValue] = position;
+      this._pushToHeaps(position, newValue);
+
+      return position;
+    }
+  }, {
+    key: '_pushToHeaps',
+    value: function _pushToHeaps( /*number*/position, /*number*/value) {
+      var element = {
+        position: position,
+        value: value };
+      // We can reuse the same object in both heaps, because we don't mutate them
+      this._smallValues.push(element);
+      this._largeValues.push(element);
+    }
+  }, {
+    key: '_cleanHeaps',
+    value: function _cleanHeaps() {
+      // We not usually only remove object from one heap while moving value.
+      // Here we make sure that there is no stale data on top of heaps.
+      this._cleanHeap(this._smallValues);
+      this._cleanHeap(this._largeValues);
+      var minHeapSize = Math.min(this._smallValues.size(), this._largeValues.size());
+      var maxHeapSize = Math.max(this._smallValues.size(), this._largeValues.size());
+      if (maxHeapSize > 10 * minHeapSize) {
+        // There are many old values in one of heaps. We nned to get rid of them
+        // to not use too avoid memory leaks
+        this._recreateHeaps();
+      }
+    }
+  }, {
+    key: '_recreateHeaps',
+    value: function _recreateHeaps() {
+      var sourceHeap = this._smallValues.size() < this._largeValues.size() ? this._smallValues : this._largeValues;
+      var newSmallValues = new Heap([], // Initial data in the heap
+      this._smallerComparator);
+      var newLargeValues = new Heap([], // Initial datat in the heap
+      this._greaterComparator);
+      while (!sourceHeap.empty()) {
+        var element = sourceHeap.pop();
+        // Push all stil valid elements to new heaps
+        if (this._valueToPositionMap[element.value] !== undefined) {
+          newSmallValues.push(element);
+          newLargeValues.push(element);
+        }
+      }
+      this._smallValues = newSmallValues;
+      this._largeValues = newLargeValues;
+    }
+  }, {
+    key: '_cleanHeap',
+    value: function _cleanHeap( /*object*/heap) {
+      while (!heap.empty() && this._valueToPositionMap[heap.peek().value] === undefined) {
+        heap.pop();
+      }
+    }
+  }, {
+    key: '_smallerComparator',
+    value: function _smallerComparator( /*object*/lhs, /*object*/rhs) /*boolean*/{
+      return lhs.value < rhs.value;
+    }
+  }, {
+    key: '_greaterComparator',
+    value: function _greaterComparator( /*object*/lhs, /*object*/rhs) /*boolean*/{
+      return lhs.value > rhs.value;
+    }
+  }]);
+
+  return IntegerBufferSet;
+})();
+
+module.exports = IntegerBufferSet;
+},{"./Heap":26,"./invariant":45}],28:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule Keys
+ */
+
+"use strict";
+
+module.exports = {
+  BACKSPACE: 8,
+  TAB: 9,
+  RETURN: 13,
+  ALT: 18,
+  ESC: 27,
+  SPACE: 32,
+  PAGE_UP: 33,
+  PAGE_DOWN: 34,
+  END: 35,
+  HOME: 36,
+  LEFT: 37,
+  UP: 38,
+  RIGHT: 39,
+  DOWN: 40,
+  DELETE: 46,
+  COMMA: 188,
+  PERIOD: 190,
+  A: 65,
+  Z: 90,
+  ZERO: 48,
+  NUMPAD_0: 96,
+  NUMPAD_9: 105
+};
+},{}],29:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule Locale
+ */
+
+"use strict";
+
+// Hard code this for now.
+var Locale = {
+  isRTL: function isRTL() {
+    return false;
+  },
+  getDirection: function getDirection() {
+    return "LTR";
+  }
+};
+
+module.exports = Locale;
+},{}],30:[function(require,module,exports){
+(function (global){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule PrefixIntervalTree
+ * @flow
+ * @typechecks
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+var invariant = require('./invariant');
+
+var parent = function parent(node) {
+  return Math.floor(node / 2);
+};
+
+var Int32Array = global.Int32Array || function (size) {
+  var xs = [];
+  for (var i = size - 1; i >= 0; --i) {
+    xs[i] = 0;
+  }
+  return xs;
+};
+
+/**
+ * Computes the next power of 2 after or equal to x.
+ */
+function ceilLog2(x) {
+  var y = 1;
+  while (y < x) {
+    y *= 2;
+  }
+  return y;
+}
+
+/**
+ * A prefix interval tree stores an numeric array and the partial sums of that
+ * array. It is optimized for updating the values of the array without
+ * recomputing all of the partial sums.
+ *
+ *   - O(ln n) update
+ *   - O(1) lookup
+ *   - O(ln n) compute a partial sum
+ *   - O(n) space
+ *
+ * Note that the sequence of partial sums is one longer than the array, so that
+ * the first partial sum is always 0, and the last partial sum is the sum of the
+ * entire array.
+ */
+
+var PrefixIntervalTree = (function () {
+  function PrefixIntervalTree(xs) {
+    _classCallCheck(this, PrefixIntervalTree);
+
+    this._size = xs.length;
+    this._half = ceilLog2(this._size);
+    this._heap = new Int32Array(2 * this._half);
+
+    var i;
+    for (i = 0; i < this._size; ++i) {
+      this._heap[this._half + i] = xs[i];
+    }
+
+    for (i = this._half - 1; i > 0; --i) {
+      this._heap[i] = this._heap[2 * i] + this._heap[2 * i + 1];
+    }
+  }
+
+  _createClass(PrefixIntervalTree, [{
+    key: 'set',
+    value: function set(index, value) {
+      invariant(0 <= index && index < this._size, 'Index out of range %s', index);
+
+      var node = this._half + index;
+      this._heap[node] = value;
+
+      node = parent(node);
+      for (; node !== 0; node = parent(node)) {
+        this._heap[node] = this._heap[2 * node] + this._heap[2 * node + 1];
+      }
+    }
+  }, {
+    key: 'get',
+    value: function get(index) {
+      invariant(0 <= index && index < this._size, 'Index out of range %s', index);
+
+      var node = this._half + index;
+      return this._heap[node];
+    }
+  }, {
+    key: 'getSize',
+    value: function getSize() {
+      return this._size;
+    }
+  }, {
+    key: 'sumUntil',
+
+    /**
+     * Returns the sum get(0) + get(1) + ... + get(end - 1).
+     */
+    value: function sumUntil(end) {
+      invariant(0 <= end && end < this._size + 1, 'Index out of range %s', end);
+
+      if (end === 0) {
+        return 0;
+      }
+
+      var node = this._half + end - 1;
+      var sum = this._heap[node];
+      for (; node !== 1; node = parent(node)) {
+        if (node % 2 === 1) {
+          sum += this._heap[node - 1];
+        }
+      }
+
+      return sum;
+    }
+  }, {
+    key: 'sumTo',
+
+    /**
+     * Returns the sum get(0) + get(1) + ... + get(inclusiveEnd).
+     */
+    value: function sumTo(inclusiveEnd) {
+      invariant(0 <= inclusiveEnd && inclusiveEnd < this._size, 'Index out of range %s', inclusiveEnd);
+      return this.sumUntil(inclusiveEnd + 1);
+    }
+  }, {
+    key: 'sum',
+
+    /**
+     * Returns the sum get(begin) + get(begin + 1) + ... + get(end - 1).
+     */
+    value: function sum(begin, end) {
+      invariant(begin <= end, 'Begin must precede end');
+      return this.sumUntil(end) - this.sumUntil(begin);
+    }
+  }, {
+    key: 'greatestLowerBound',
+
+    /**
+     * Returns the smallest i such that 0 <= i <= size and sumUntil(i) <= t, or
+     * -1 if no such i exists.
+     */
+    value: function greatestLowerBound(t) {
+      if (t < 0) {
+        return -1;
+      }
+
+      var node = 1;
+      if (this._heap[node] <= t) {
+        return this._size;
+      }
+
+      while (node < this._half) {
+        var leftSum = this._heap[2 * node];
+        if (t < leftSum) {
+          node = 2 * node;
+        } else {
+          node = 2 * node + 1;
+          t -= leftSum;
+        }
+      }
+
+      return node - this._half;
+    }
+  }, {
+    key: 'greatestStrictLowerBound',
+
+    /**
+     * Returns the smallest i such that 0 <= i <= size and sumUntil(i) < t, or
+     * -1 if no such i exists.
+     */
+    value: function greatestStrictLowerBound(t) {
+      if (t <= 0) {
+        return -1;
+      }
+
+      var node = 1;
+      if (this._heap[node] < t) {
+        return this._size;
+      }
+
+      while (node < this._half) {
+        var leftSum = this._heap[2 * node];
+        if (t <= leftSum) {
+          node = 2 * node;
+        } else {
+          node = 2 * node + 1;
+          t -= leftSum;
+        }
+      }
+
+      return node - this._half;
+    }
+  }, {
+    key: 'leastUpperBound',
+
+    /**
+     * Returns the smallest i such that 0 <= i <= size and t <= sumUntil(i), or
+     * size + 1 if no such i exists.
+     */
+    value: function leastUpperBound(t) {
+      return this.greatestStrictLowerBound(t) + 1;
+    }
+  }, {
+    key: 'leastStrictUpperBound',
+
+    /**
+     * Returns the smallest i such that 0 <= i <= size and t < sumUntil(i), or
+     * size + 1 if no such i exists.
+     */
+    value: function leastStrictUpperBound(t) {
+      return this.greatestLowerBound(t) + 1;
+    }
+  }], [{
+    key: 'uniform',
+    value: function uniform(size, initialValue) {
+      var xs = [];
+      for (var i = size - 1; i >= 0; --i) {
+        xs[i] = initialValue;
+      }
+
+      return new PrefixIntervalTree(xs);
+    }
+  }, {
+    key: 'empty',
+    value: function empty(size) {
+      return PrefixIntervalTree.uniform(size, 0);
+    }
+  }]);
+
+  return PrefixIntervalTree;
+})();
+
+module.exports = PrefixIntervalTree;
+
+/**
+ * Number of elements in the array
+ */
+
+/**
+ * Half the size of the heap. It is also the number of non-leaf nodes, and the
+ * index of the first element in the heap. Always a power of 2.
+ */
+
+/**
+ * Binary heap
+ */
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+
+},{"./invariant":45}],31:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule React
+ */
+
+'use strict';
+
+module.exports = require('react');
+},{"react":273}],32:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule ReactComponentWithPureRenderMixin
+ */
+
+'use strict';
+
+/**
+ * Performs equality by iterating through keys on an object and returning
+ * false when any key has values which are not strictly equal between
+ * objA and objB. Returns true when the values of all keys are strictly equal.
+ *
+ * @return {boolean}
+ */
+function shallowEqual(objA, objB) {
+  if (objA === objB) {
+    return true;
+  }
+  var key;
+  // Test for A's keys different from B.
+  for (key in objA) {
+    if (objA.hasOwnProperty(key) && (!objB.hasOwnProperty(key) || objA[key] !== objB[key])) {
+      return false;
+    }
+  }
+  // Test for B's keys missing from A.
+  for (key in objB) {
+    if (objB.hasOwnProperty(key) && !objA.hasOwnProperty(key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * If your React component's render function is "pure", e.g. it will render the
+ * same result given the same props and state, provide this Mixin for a
+ * considerable performance boost.
+ *
+ * Most React components have pure render functions.
+ *
+ * Example:
+ *
+ *   var ReactComponentWithPureRenderMixin =
+ *     require('ReactComponentWithPureRenderMixin');
+ *   React.createClass({
+ *     mixins: [ReactComponentWithPureRenderMixin],
+ *
+ *     render: function() {
+ *       return <div className={this.props.className}>foo</div>;
+ *     }
+ *   });
+ *
+ * Note: This only checks shallow equality for props and state. If these contain
+ * complex data structures this mixin may have false-negatives for deeper
+ * differences. Only mixin to components which have simple props and state, or
+ * use `forceUpdate()` when you know deep data structures have changed.
+ */
+var ReactComponentWithPureRenderMixin = {
+  shouldComponentUpdate: function shouldComponentUpdate(nextProps, nextState) {
+    return !shallowEqual(this.props, nextProps) || !shallowEqual(this.state, nextState);
+  }
+};
+
+module.exports = ReactComponentWithPureRenderMixin;
+},{}],33:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule ReactDOM
+ */
+
+'use strict';
+
+module.exports = require('react-dom');
+},{"react-dom":81}],34:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * This is utility that hanlds onWheel events and calls provided wheel
+ * callback with correct frame rate.
+ *
+ * @providesModule ReactWheelHandler
+ * @typechecks
+ */
+
+'use strict';
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
+
+var emptyFunction = require('./emptyFunction');
+var normalizeWheel = require('./normalizeWheel');
+var requestAnimationFramePolyfill = require('./requestAnimationFramePolyfill');
+
+var ReactWheelHandler = (function () {
+  /**
+   * onWheel is the callback that will be called with right frame rate if
+   * any wheel events happened
+   * onWheel should is to be called with two arguments: deltaX and deltaY in
+   * this order
+   */
+
+  function ReactWheelHandler(
+  /*function*/onWheel,
+  /*boolean|function*/handleScrollX,
+  /*boolean|function*/handleScrollY,
+  /*?boolean|?function*/stopPropagation) {
+    _classCallCheck(this, ReactWheelHandler);
+
+    this._animationFrameID = null;
+    this._deltaX = 0;
+    this._deltaY = 0;
+    this._didWheel = this._didWheel.bind(this);
+    if (typeof handleScrollX !== 'function') {
+      handleScrollX = handleScrollX ? emptyFunction.thatReturnsTrue : emptyFunction.thatReturnsFalse;
+    }
+
+    if (typeof handleScrollY !== 'function') {
+      handleScrollY = handleScrollY ? emptyFunction.thatReturnsTrue : emptyFunction.thatReturnsFalse;
+    }
+
+    if (typeof stopPropagation !== 'function') {
+      stopPropagation = stopPropagation ? emptyFunction.thatReturnsTrue : emptyFunction.thatReturnsFalse;
+    }
+
+    this._handleScrollX = handleScrollX;
+    this._handleScrollY = handleScrollY;
+    this._stopPropagation = stopPropagation;
+    this._onWheelCallback = onWheel;
+    this.onWheel = this.onWheel.bind(this);
+  }
+
+  _createClass(ReactWheelHandler, [{
+    key: 'onWheel',
+    value: function onWheel( /*object*/event) {
+      var normalizedEvent = normalizeWheel(event);
+      var deltaX = this._deltaX + normalizedEvent.pixelX;
+      var deltaY = this._deltaY + normalizedEvent.pixelY;
+      var handleScrollX = this._handleScrollX(deltaX, deltaY);
+      var handleScrollY = this._handleScrollY(deltaY, deltaX);
+      if (!handleScrollX && !handleScrollY) {
+        return;
+      }
+
+      this._deltaX += handleScrollX ? normalizedEvent.pixelX : 0;
+      this._deltaY += handleScrollY ? normalizedEvent.pixelY : 0;
+      event.preventDefault();
+
+      var changed;
+      if (this._deltaX !== 0 || this._deltaY !== 0) {
+        if (this._stopPropagation()) {
+          event.stopPropagation();
+        }
+        changed = true;
+      }
+
+      if (changed === true && this._animationFrameID === null) {
+        this._animationFrameID = requestAnimationFramePolyfill(this._didWheel);
+      }
+    }
+  }, {
+    key: '_didWheel',
+    value: function _didWheel() {
+      this._animationFrameID = null;
+      this._onWheelCallback(this._deltaX, this._deltaY);
+      this._deltaX = 0;
+      this._deltaY = 0;
+    }
+  }]);
+
+  return ReactWheelHandler;
+})();
+
+module.exports = ReactWheelHandler;
+},{"./emptyFunction":43,"./normalizeWheel":49,"./requestAnimationFramePolyfill":50}],35:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule Scrollbar.react
+ * @typechecks
+ */
+
+'use strict';
+
+var DOMMouseMoveTracker = require('./DOMMouseMoveTracker');
+var Keys = require('./Keys');
+var React = require('./React');
+var ReactDOM = require('./ReactDOM');
+var ReactComponentWithPureRenderMixin = require('./ReactComponentWithPureRenderMixin');
+var ReactWheelHandler = require('./ReactWheelHandler');
+
+var cssVar = require('./cssVar');
+var cx = require('./cx');
+var emptyFunction = require('./emptyFunction');
+var translateDOMPositionXY = require('./translateDOMPositionXY');
+
+var PropTypes = React.PropTypes;
+
+var UNSCROLLABLE_STATE = {
+  position: 0,
+  scrollable: false };
+
+var FACE_MARGIN = parseInt(cssVar('scrollbar-face-margin'), 10);
+var FACE_MARGIN_2 = FACE_MARGIN * 2;
+var FACE_SIZE_MIN = 30;
+var KEYBOARD_SCROLL_AMOUNT = 40;
+
+var _lastScrolledScrollbar = null;
+
+var Scrollbar = React.createClass({
+  displayName: 'Scrollbar',
+
+  mixins: [ReactComponentWithPureRenderMixin],
+
+  propTypes: {
+    contentSize: PropTypes.number.isRequired,
+    defaultPosition: PropTypes.number,
+    isOpaque: PropTypes.bool,
+    orientation: PropTypes.oneOf(['vertical', 'horizontal']),
+    onScroll: PropTypes.func,
+    position: PropTypes.number,
+    size: PropTypes.number.isRequired,
+    trackColor: PropTypes.oneOf(['gray']),
+    zIndex: PropTypes.number,
+    verticalTop: PropTypes.number
+  },
+
+  getInitialState: function getInitialState() /*object*/{
+    var props = this.props;
+    return this._calculateState(props.position || props.defaultPosition || 0, props.size, props.contentSize, props.orientation);
+  },
+
+  componentWillReceiveProps: function componentWillReceiveProps( /*object*/nextProps) {
+    var controlledPosition = nextProps.position;
+    if (controlledPosition === undefined) {
+      this._setNextState(this._calculateState(this.state.position, nextProps.size, nextProps.contentSize, nextProps.orientation));
+    } else {
+      this._setNextState(this._calculateState(controlledPosition, nextProps.size, nextProps.contentSize, nextProps.orientation), nextProps);
+    }
+  },
+
+  getDefaultProps: function getDefaultProps() /*object*/{
+    return {
+      defaultPosition: 0,
+      isOpaque: false,
+      onScroll: emptyFunction,
+      orientation: 'vertical',
+      zIndex: 99 };
+  },
+
+  render: function render() /*?object*/{
+    if (!this.state.scrollable) {
+      return null;
+    }
+
+    var size = this.props.size;
+    var mainStyle;
+    var faceStyle;
+    var isHorizontal = this.state.isHorizontal;
+    var isVertical = !isHorizontal;
+    var isActive = this.state.focused || this.state.isDragging;
+    var faceSize = this.state.faceSize;
+    var isOpaque = this.props.isOpaque;
+    var verticalTop = this.props.verticalTop || 0;
+
+    var mainClassName = cx({
+      'ScrollbarLayout/main': true,
+      'ScrollbarLayout/mainVertical': isVertical,
+      'ScrollbarLayout/mainHorizontal': isHorizontal,
+      'public/Scrollbar/main': true,
+      'public/Scrollbar/mainOpaque': isOpaque,
+      'public/Scrollbar/mainActive': isActive });
+
+    var faceClassName = cx({
+      'ScrollbarLayout/face': true,
+      'ScrollbarLayout/faceHorizontal': isHorizontal,
+      'ScrollbarLayout/faceVertical': isVertical,
+      'public/Scrollbar/faceActive': isActive,
+      'public/Scrollbar/face': true });
+
+    var position = this.state.position * this.state.scale + FACE_MARGIN;
+
+    if (isHorizontal) {
+      mainStyle = {
+        width: size };
+      faceStyle = {
+        width: faceSize - FACE_MARGIN_2
+      };
+      translateDOMPositionXY(faceStyle, position, 0);
+    } else {
+      mainStyle = {
+        top: verticalTop,
+        height: size };
+      faceStyle = {
+        height: faceSize - FACE_MARGIN_2 };
+      translateDOMPositionXY(faceStyle, 0, position);
+    }
+
+    mainStyle.zIndex = this.props.zIndex;
+
+    if (this.props.trackColor === 'gray') {
+      mainStyle.backgroundColor = cssVar('fbui-desktop-background-light');
+    }
+
+    return React.createElement(
+      'div',
+      {
+        onFocus: this._onFocus,
+        onBlur: this._onBlur,
+        onKeyDown: this._onKeyDown,
+        onMouseDown: this._onMouseDown,
+        onWheel: this._wheelHandler.onWheel,
+        className: mainClassName,
+        style: mainStyle,
+        tabIndex: 0 },
+      React.createElement('div', {
+        ref: 'face',
+        className: faceClassName,
+        style: faceStyle
+      })
+    );
+  },
+
+  componentWillMount: function componentWillMount() {
+    var isHorizontal = this.props.orientation === 'horizontal';
+    var onWheel = isHorizontal ? this._onWheelX : this._onWheelY;
+
+    this._wheelHandler = new ReactWheelHandler(onWheel, this._shouldHandleX, // Should hanlde horizontal scroll
+    this._shouldHandleY // Should handle vertical scroll
+    );
+  },
+
+  componentDidMount: function componentDidMount() {
+    this._mouseMoveTracker = new DOMMouseMoveTracker(this._onMouseMove, this._onMouseMoveEnd, document.documentElement);
+
+    if (this.props.position !== undefined && this.state.position !== this.props.position) {
+      this._didScroll();
+    }
+  },
+
+  componentWillUnmount: function componentWillUnmount() {
+    this._nextState = null;
+    this._mouseMoveTracker.releaseMouseMoves();
+    if (_lastScrolledScrollbar === this) {
+      _lastScrolledScrollbar = null;
+    }
+    delete this._mouseMoveTracker;
+  },
+
+  scrollBy: function scrollBy( /*number*/delta) {
+    this._onWheel(delta);
+  },
+
+  _shouldHandleX: function _shouldHandleX( /*number*/delta) /*boolean*/{
+    return this.props.orientation === 'horizontal' ? this._shouldHandleChange(delta) : false;
+  },
+
+  _shouldHandleY: function _shouldHandleY( /*number*/delta) /*boolean*/{
+    return this.props.orientation !== 'horizontal' ? this._shouldHandleChange(delta) : false;
+  },
+
+  _shouldHandleChange: function _shouldHandleChange( /*number*/delta) /*boolean*/{
+    var nextState = this._calculateState(this.state.position + delta, this.props.size, this.props.contentSize, this.props.orientation);
+    return nextState.position !== this.state.position;
+  },
+
+  _calculateState: function _calculateState(
+  /*number*/position,
+  /*number*/size,
+  /*number*/contentSize,
+  /*string*/orientation) /*object*/{
+    if (size < 1 || contentSize <= size) {
+      return UNSCROLLABLE_STATE;
+    }
+
+    var stateKey = '' + position + '_' + size + '_' + contentSize + '_' + orientation;
+    if (this._stateKey === stateKey) {
+      return this._stateForKey;
+    }
+
+    // There are two types of positions here.
+    // 1) Phisical position: changed by mouse / keyboard
+    // 2) Logical position: changed by props.
+    // The logical position will be kept as as internal state and the `render()`
+    // function will translate it into physical position to render.
+
+    var isHorizontal = orientation === 'horizontal';
+    var scale = size / contentSize;
+    var faceSize = size * scale;
+
+    if (faceSize < FACE_SIZE_MIN) {
+      scale = (size - FACE_SIZE_MIN) / (contentSize - size);
+      faceSize = FACE_SIZE_MIN;
+    }
+
+    var scrollable = true;
+    var maxPosition = contentSize - size;
+
+    if (position < 0) {
+      position = 0;
+    } else if (position > maxPosition) {
+      position = maxPosition;
+    }
+
+    var isDragging = this._mouseMoveTracker ? this._mouseMoveTracker.isDragging() : false;
+
+    // This function should only return flat values that can be compared quiclky
+    // by `ReactComponentWithPureRenderMixin`.
+    var state = {
+      faceSize: faceSize,
+      isDragging: isDragging,
+      isHorizontal: isHorizontal,
+      position: position,
+      scale: scale,
+      scrollable: scrollable };
+
+    // cache the state for later use.
+    this._stateKey = stateKey;
+    this._stateForKey = state;
+    return state;
+  },
+
+  _onWheelY: function _onWheelY( /*number*/deltaX, /*number*/deltaY) {
+    this._onWheel(deltaY);
+  },
+
+  _onWheelX: function _onWheelX( /*number*/deltaX, /*number*/deltaY) {
+    this._onWheel(deltaX);
+  },
+
+  _onWheel: function _onWheel( /*number*/delta) {
+    var props = this.props;
+
+    // The mouse may move faster then the animation frame does.
+    // Use `requestAnimationFrame` to avoid over-updating.
+    this._setNextState(this._calculateState(this.state.position + delta, props.size, props.contentSize, props.orientation));
+  },
+
+  _onMouseDown: function _onMouseDown( /*object*/event) {
+    var nextState;
+
+    if (event.target !== ReactDOM.findDOMNode(this.refs.face)) {
+      // Both `offsetX` and `layerX` are non-standard DOM property but they are
+      // magically available for browsers somehow.
+      var nativeEvent = event.nativeEvent;
+      var position = this.state.isHorizontal ? nativeEvent.offsetX || nativeEvent.layerX : nativeEvent.offsetY || nativeEvent.layerY;
+
+      // MouseDown on the scroll-track directly, move the center of the
+      // scroll-face to the mouse position.
+      var props = this.props;
+      position /= this.state.scale;
+      nextState = this._calculateState(position - this.state.faceSize * 0.5 / this.state.scale, props.size, props.contentSize, props.orientation);
+    } else {
+      nextState = {};
+    }
+
+    nextState.focused = true;
+    this._setNextState(nextState);
+
+    this._mouseMoveTracker.captureMouseMoves(event);
+    // Focus the node so it may receive keyboard event.
+    ReactDOM.findDOMNode(this).focus();
+  },
+
+  _onMouseMove: function _onMouseMove( /*number*/deltaX, /*number*/deltaY) {
+    var props = this.props;
+    var delta = this.state.isHorizontal ? deltaX : deltaY;
+    delta /= this.state.scale;
+
+    this._setNextState(this._calculateState(this.state.position + delta, props.size, props.contentSize, props.orientation));
+  },
+
+  _onMouseMoveEnd: function _onMouseMoveEnd() {
+    this._nextState = null;
+    this._mouseMoveTracker.releaseMouseMoves();
+    this.setState({ isDragging: false });
+  },
+
+  _onKeyDown: function _onKeyDown( /*object*/event) {
+    var keyCode = event.keyCode;
+
+    if (keyCode === Keys.TAB) {
+      // Let focus move off the scrollbar.
+      return;
+    }
+
+    var distance = KEYBOARD_SCROLL_AMOUNT;
+    var direction = 0;
+
+    if (this.state.isHorizontal) {
+      switch (keyCode) {
+        case Keys.HOME:
+          direction = -1;
+          distance = this.props.contentSize;
+          break;
+
+        case Keys.LEFT:
+          direction = -1;
+          break;
+
+        case Keys.RIGHT:
+          direction = 1;
+          break;
+
+        default:
+          return;
+      }
+    }
+
+    if (!this.state.isHorizontal) {
+      switch (keyCode) {
+        case Keys.SPACE:
+          if (event.shiftKey) {
+            direction = -1;
+          } else {
+            direction = 1;
+          }
+          break;
+
+        case Keys.HOME:
+          direction = -1;
+          distance = this.props.contentSize;
+          break;
+
+        case Keys.UP:
+          direction = -1;
+          break;
+
+        case Keys.DOWN:
+          direction = 1;
+          break;
+
+        case Keys.PAGE_UP:
+          direction = -1;
+          distance = this.props.size;
+          break;
+
+        case Keys.PAGE_DOWN:
+          direction = 1;
+          distance = this.props.size;
+          break;
+
+        default:
+          return;
+      }
+    }
+
+    event.preventDefault();
+
+    var props = this.props;
+    this._setNextState(this._calculateState(this.state.position + distance * direction, props.size, props.contentSize, props.orientation));
+  },
+
+  _onFocus: function _onFocus() {
+    this.setState({
+      focused: true });
+  },
+
+  _onBlur: function _onBlur() {
+    this.setState({
+      focused: false });
+  },
+
+  _blur: function _blur() {
+    if (this.isMounted()) {
+      try {
+        this._onBlur();
+        ReactDOM.findDOMNode(this).blur();
+      } catch (oops) {}
+    }
+  },
+
+  _setNextState: function _setNextState( /*object*/nextState, /*?object*/props) {
+    props = props || this.props;
+    var controlledPosition = props.position;
+    var willScroll = this.state.position !== nextState.position;
+    if (controlledPosition === undefined) {
+      var callback = willScroll ? this._didScroll : undefined;
+      this.setState(nextState, callback);
+    } else if (controlledPosition === nextState.position) {
+      this.setState(nextState);
+    } else {
+      // Scrolling is controlled. Don't update the state and let the owner
+      // to update the scrollbar instead.
+      if (nextState.position !== undefined && nextState.position !== this.state.position) {
+        this.props.onScroll(nextState.position);
+      }
+      return;
+    }
+
+    if (willScroll && _lastScrolledScrollbar !== this) {
+      _lastScrolledScrollbar && _lastScrolledScrollbar._blur();
+      _lastScrolledScrollbar = this;
+    }
+  },
+
+  _didScroll: function _didScroll() {
+    this.props.onScroll(this.state.position);
+  } });
+
+Scrollbar.KEYBOARD_SCROLL_AMOUNT = KEYBOARD_SCROLL_AMOUNT;
+Scrollbar.SIZE = parseInt(cssVar('scrollbar-size'), 10);
+
+module.exports = Scrollbar;
+
+// pass
+},{"./DOMMouseMoveTracker":5,"./Keys":28,"./React":31,"./ReactComponentWithPureRenderMixin":32,"./ReactDOM":33,"./ReactWheelHandler":34,"./cssVar":40,"./cx":41,"./emptyFunction":43,"./translateDOMPositionXY":52}],36:[function(require,module,exports){
+/**
+ * Copyright 2004-present Facebook. All Rights Reserved.
+ *
+ * @providesModule UserAgent_DEPRECATED
+ */
+
+/**
+ *  Provides entirely client-side User Agent and OS detection. You should prefer
+ *  the non-deprecated UserAgent module when possible, which exposes our
+ *  authoritative server-side PHP-based detection to the client.
+ *
+ *  Usage is straightforward:
+ *
+ *    if (UserAgent_DEPRECATED.ie()) {
+ *      //  IE
+ *    }
+ *
+ *  You can also do version checks:
+ *
+ *    if (UserAgent_DEPRECATED.ie() >= 7) {
+ *      //  IE7 or better
+ *    }
+ *
+ *  The browser functions will return NaN if the browser does not match, so
+ *  you can also do version compares the other way:
+ *
+ *    if (UserAgent_DEPRECATED.ie() < 7) {
+ *      //  IE6 or worse
+ *    }
+ *
+ *  Note that the version is a float and may include a minor version number,
+ *  so you should always use range operators to perform comparisons, not
+ *  strict equality.
+ *
+ *  **Note:** You should **strongly** prefer capability detection to browser
+ *  version detection where it's reasonable:
+ *
+ *    http://www.quirksmode.org/js/support.html
+ *
+ *  Further, we have a large number of mature wrapper functions and classes
+ *  which abstract away many browser irregularities. Check the documentation,
+ *  grep for things, or ask on javascript@lists.facebook.com before writing yet
+ *  another copy of "event || window.event".
+ *
+ */
+
+'use strict';
+
+var _populated = false;
+
+// Browsers
+var _ie, _firefox, _opera, _webkit, _chrome;
+
+// Actual IE browser for compatibility mode
+var _ie_real_version;
+
+// Platforms
+var _osx, _windows, _linux, _android;
+
+// Architectures
+var _win64;
+
+// Devices
+var _iphone, _ipad, _native;
+
+var _mobile;
+
+function _populate() {
+  if (_populated) {
+    return;
+  }
+
+  _populated = true;
+
+  // To work around buggy JS libraries that can't handle multi-digit
+  // version numbers, Opera 10's user agent string claims it's Opera
+  // 9, then later includes a Version/X.Y field:
+  //
+  // Opera/9.80 (foo) Presto/2.2.15 Version/10.10
+  var uas = navigator.userAgent;
+  var agent = /(?:MSIE.(\d+\.\d+))|(?:(?:Firefox|GranParadiso|Iceweasel).(\d+\.\d+))|(?:Opera(?:.+Version.|.)(\d+\.\d+))|(?:AppleWebKit.(\d+(?:\.\d+)?))|(?:Trident\/\d+\.\d+.*rv:(\d+\.\d+))/.exec(uas);
+  var os = /(Mac OS X)|(Windows)|(Linux)/.exec(uas);
+
+  _iphone = /\b(iPhone|iP[ao]d)/.exec(uas);
+  _ipad = /\b(iP[ao]d)/.exec(uas);
+  _android = /Android/i.exec(uas);
+  _native = /FBAN\/\w+;/i.exec(uas);
+  _mobile = /Mobile/i.exec(uas);
+
+  // Note that the IE team blog would have you believe you should be checking
+  // for 'Win64; x64'.  But MSDN then reveals that you can actually be coming
+  // from either x64 or ia64;  so ultimately, you should just check for Win64
+  // as in indicator of whether you're in 64-bit IE.  32-bit IE on 64-bit
+  // Windows will send 'WOW64' instead.
+  _win64 = !!/Win64/.exec(uas);
+
+  if (agent) {
+    _ie = agent[1] ? parseFloat(agent[1]) : agent[5] ? parseFloat(agent[5]) : NaN;
+    // IE compatibility mode
+    if (_ie && document && document.documentMode) {
+      _ie = document.documentMode;
+    }
+    // grab the "true" ie version from the trident token if available
+    var trident = /(?:Trident\/(\d+.\d+))/.exec(uas);
+    _ie_real_version = trident ? parseFloat(trident[1]) + 4 : _ie;
+
+    _firefox = agent[2] ? parseFloat(agent[2]) : NaN;
+    _opera = agent[3] ? parseFloat(agent[3]) : NaN;
+    _webkit = agent[4] ? parseFloat(agent[4]) : NaN;
+    if (_webkit) {
+      // We do not add the regexp to the above test, because it will always
+      // match 'safari' only since 'AppleWebKit' appears before 'Chrome' in
+      // the userAgent string.
+      agent = /(?:Chrome\/(\d+\.\d+))/.exec(uas);
+      _chrome = agent && agent[1] ? parseFloat(agent[1]) : NaN;
+    } else {
+      _chrome = NaN;
+    }
+  } else {
+    _ie = _firefox = _opera = _chrome = _webkit = NaN;
+  }
+
+  if (os) {
+    if (os[1]) {
+      // Detect OS X version.  If no version number matches, set _osx to true.
+      // Version examples:  10, 10_6_1, 10.7
+      // Parses version number as a float, taking only first two sets of
+      // digits.  If only one set of digits is found, returns just the major
+      // version number.
+      var ver = /(?:Mac OS X (\d+(?:[._]\d+)?))/.exec(uas);
+
+      _osx = ver ? parseFloat(ver[1].replace('_', '.')) : true;
+    } else {
+      _osx = false;
+    }
+    _windows = !!os[2];
+    _linux = !!os[3];
+  } else {
+    _osx = _windows = _linux = false;
+  }
+}
+
+var UserAgent_DEPRECATED = {
+
+  /**
+   *  Check if the UA is Internet Explorer.
+   *
+   *
+   *  @return float|NaN Version number (if match) or NaN.
+   */
+  ie: function ie() {
+    return _populate() || _ie;
+  },
+
+  /**
+   * Check if we're in Internet Explorer compatibility mode.
+   *
+   * @return bool true if in compatibility mode, false if
+   * not compatibility mode or not ie
+   */
+  ieCompatibilityMode: function ieCompatibilityMode() {
+    return _populate() || _ie_real_version > _ie;
+  },
+
+  /**
+   * Whether the browser is 64-bit IE.  Really, this is kind of weak sauce;  we
+   * only need this because Skype can't handle 64-bit IE yet.  We need to remove
+   * this when we don't need it -- tracked by #601957.
+   */
+  ie64: function ie64() {
+    return UserAgent_DEPRECATED.ie() && _win64;
+  },
+
+  /**
+   *  Check if the UA is Firefox.
+   *
+   *
+   *  @return float|NaN Version number (if match) or NaN.
+   */
+  firefox: function firefox() {
+    return _populate() || _firefox;
+  },
+
+  /**
+   *  Check if the UA is Opera.
+   *
+   *
+   *  @return float|NaN Version number (if match) or NaN.
+   */
+  opera: function opera() {
+    return _populate() || _opera;
+  },
+
+  /**
+   *  Check if the UA is WebKit.
+   *
+   *
+   *  @return float|NaN Version number (if match) or NaN.
+   */
+  webkit: function webkit() {
+    return _populate() || _webkit;
+  },
+
+  /**
+   *  For Push
+   *  WILL BE REMOVED VERY SOON. Use UserAgent_DEPRECATED.webkit
+   */
+  safari: function safari() {
+    return UserAgent_DEPRECATED.webkit();
+  },
+
+  /**
+   *  Check if the UA is a Chrome browser.
+   *
+   *
+   *  @return float|NaN Version number (if match) or NaN.
+   */
+  chrome: function chrome() {
+    return _populate() || _chrome;
+  },
+
+  /**
+   *  Check if the user is running Windows.
+   *
+   *  @return bool `true' if the user's OS is Windows.
+   */
+  windows: function windows() {
+    return _populate() || _windows;
+  },
+
+  /**
+   *  Check if the user is running Mac OS X.
+   *
+   *  @return float|bool   Returns a float if a version number is detected,
+   *                       otherwise true/false.
+   */
+  osx: function osx() {
+    return _populate() || _osx;
+  },
+
+  /**
+   * Check if the user is running Linux.
+   *
+   * @return bool `true' if the user's OS is some flavor of Linux.
+   */
+  linux: function linux() {
+    return _populate() || _linux;
+  },
+
+  /**
+   * Check if the user is running on an iPhone or iPod platform.
+   *
+   * @return bool `true' if the user is running some flavor of the
+   *    iPhone OS.
+   */
+  iphone: function iphone() {
+    return _populate() || _iphone;
+  },
+
+  mobile: function mobile() {
+    return _populate() || (_iphone || _ipad || _android || _mobile);
+  },
+
+  nativeApp: function nativeApp() {
+    // webviews inside of the native apps
+    return _populate() || _native;
+  },
+
+  android: function android() {
+    return _populate() || _android;
+  },
+
+  ipad: function ipad() {
+    return _populate() || _ipad;
+  }
+};
+
+module.exports = UserAgent_DEPRECATED;
+},{}],37:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule camelize
+ * @typechecks
+ */
+
+"use strict";
+
+var _hyphenPattern = /-(.)/g;
+
+/**
+ * Camelcases a hyphenated string, for example:
+ *
+ *   > camelize('background-color')
+ *   < "backgroundColor"
+ *
+ * @param {string} string
+ * @return {string}
+ */
+function camelize(string) {
+  return string.replace(_hyphenPattern, function (_, character) {
+    return character.toUpperCase();
+  });
+}
+
+module.exports = camelize;
+},{}],38:[function(require,module,exports){
+(function (global){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule cancelAnimationFramePolyfill
+ */
+
+/**
+ * Here is the native and polyfill version of cancelAnimationFrame.
+ * Please don't use it directly and use cancelAnimationFrame module instead.
+ */
+"use strict";
+
+var cancelAnimationFrame = global.cancelAnimationFrame || global.webkitCancelAnimationFrame || global.mozCancelAnimationFrame || global.oCancelAnimationFrame || global.msCancelAnimationFrame || global.clearTimeout;
+
+module.exports = cancelAnimationFrame;
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+
+},{}],39:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule clamp
+ * @typechecks
+ */
+
+/**
+ * Clamps (or clips or confines) the value to be between min and max.
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @return {number}
+ */
+"use strict";
+
+function clamp(value, min, max) {
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
+}
+
+module.exports = clamp;
+},{}],40:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule cssVar
+ * @typechecks
+ */
+
+'use strict';
+
+var CSS_VARS = {
+  'scrollbar-face-active-color': '#7d7d7d',
+  'scrollbar-face-color': '#c2c2c2',
+  'scrollbar-face-margin': '4px',
+  'scrollbar-face-radius': '6px',
+  'scrollbar-size': '15px',
+  'scrollbar-size-large': '17px',
+  'scrollbar-track-color': 'rgba(255, 255, 255, 0.8)',
+  'fbui-white': '#fff',
+  'fbui-desktop-background-light': '#f6f7f8' };
+
+/**
+ * @param {string} name
+ */
+function cssVar(name) {
+  if (CSS_VARS.hasOwnProperty(name)) {
+    return CSS_VARS[name];
+  }
+
+  throw new Error('cssVar' + '("' + name + '"): Unexpected class transformation.');
+}
+
+cssVar.CSS_VARS = CSS_VARS;
+
+module.exports = cssVar;
+},{}],41:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule cx
+ */
+
+'use strict';
+
+var slashReplaceRegex = /\//g;
+var cache = {};
+
+function getClassName(className) {
+  if (cache[className]) {
+    return cache[className];
+  }
+
+  cache[className] = className.replace(slashReplaceRegex, '_');
+  return cache[className];
+}
+
+/**
+ * This function is used to mark string literals representing CSS class names
+ * so that they can be transformed statically. This allows for modularization
+ * and minification of CSS class names.
+ *
+ * In static_upstream, this function is actually implemented, but it should
+ * eventually be replaced with something more descriptive, and the transform
+ * that is used in the main stack should be ported for use elsewhere.
+ *
+ * @param string|object className to modularize, or an object of key/values.
+ *                      In the object case, the values are conditions that
+ *                      determine if the className keys should be included.
+ * @param [string ...]  Variable list of classNames in the string case.
+ * @return string       Renderable space-separated CSS className.
+ */
+function cx(classNames) {
+  var classNamesArray;
+  if (typeof classNames == 'object') {
+    classNamesArray = Object.keys(classNames).filter(function (className) {
+      return classNames[className];
+    });
+  } else {
+    classNamesArray = Array.prototype.slice.call(arguments);
+  }
+
+  return classNamesArray.map(getClassName).join(' ');
+}
+
+module.exports = cx;
+},{}],42:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule debounceCore
+ * @typechecks
+ */
+
+/**
+ * Invokes the given callback after a specified number of milliseconds have
+ * elapsed, ignoring subsequent calls.
+ *
+ * For example, if you wanted to update a preview after the user stops typing
+ * you could do the following:
+ *
+ *   elem.addEventListener('keyup', debounce(this.updatePreview, 250), false);
+ *
+ * The returned function has a reset method which can be called to cancel a
+ * pending invocation.
+ *
+ *   var debouncedUpdatePreview = debounce(this.updatePreview, 250);
+ *   elem.addEventListener('keyup', debouncedUpdatePreview, false);
+ *
+ *   // later, to cancel pending calls
+ *   debouncedUpdatePreview.reset();
+ *
+ * @param {function} func - the function to debounce
+ * @param {number} wait - how long to wait in milliseconds
+ * @param {*} context - optional context to invoke the function in
+ * @param {?function} setTimeoutFunc - an implementation of setTimeout
+ *  if nothing is passed in the default setTimeout function is used
+  * @param {?function} clearTimeoutFunc - an implementation of clearTimeout
+ *  if nothing is passed in the default clearTimeout function is used
+ */
+"use strict";
+
+function debounce(func, wait, context, setTimeoutFunc, clearTimeoutFunc) {
+  setTimeoutFunc = setTimeoutFunc || setTimeout;
+  clearTimeoutFunc = clearTimeoutFunc || clearTimeout;
+  var timeout;
+
+  function debouncer() {
+    for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
+      args[_key] = arguments[_key];
+    }
+
+    debouncer.reset();
+
+    var callback = function callback() {
+      func.apply(context, args);
+    };
+    callback.__SMmeta = func.__SMmeta;
+    timeout = setTimeoutFunc(callback, wait);
+  }
+
+  debouncer.reset = function () {
+    clearTimeoutFunc(timeout);
+  };
+
+  return debouncer;
+}
+
+module.exports = debounce;
+},{}],43:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule emptyFunction
+ */
+
+"use strict";
+
+function makeEmptyFunction(arg) {
+  return function () {
+    return arg;
+  };
+}
+
+/**
+ * This function accepts and discards inputs; it has no side effects. This is
+ * primarily useful idiomatically for overridable function endpoints which
+ * always need to be callable, since JS lacks a null-call idiom ala Cocoa.
+ */
+function emptyFunction() {}
+
+emptyFunction.thatReturns = makeEmptyFunction;
+emptyFunction.thatReturnsFalse = makeEmptyFunction(false);
+emptyFunction.thatReturnsTrue = makeEmptyFunction(true);
+emptyFunction.thatReturnsNull = makeEmptyFunction(null);
+emptyFunction.thatReturnsThis = function () {
+  return this;
+};
+emptyFunction.thatReturnsArgument = function (arg) {
+  return arg;
+};
+
+module.exports = emptyFunction;
+},{}],44:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule getVendorPrefixedName
+ * @typechecks
+ */
+
+'use strict';
+
+var ExecutionEnvironment = require('./ExecutionEnvironment');
+
+var camelize = require('./camelize');
+var invariant = require('./invariant');
+
+var memoized = {};
+var prefixes = ['Webkit', 'ms', 'Moz', 'O'];
+var prefixRegex = new RegExp('^(' + prefixes.join('|') + ')');
+var testStyle = ExecutionEnvironment.canUseDOM ? document.createElement('div').style : {};
+
+function getWithPrefix(name) {
+  for (var i = 0; i < prefixes.length; i++) {
+    var prefixedName = prefixes[i] + name;
+    if (prefixedName in testStyle) {
+      return prefixedName;
+    }
+  }
+  return null;
+}
+
+/**
+ * @param {string} property Name of a css property to check for.
+ * @return {?string} property name supported in the browser, or null if not
+ * supported.
+ */
+function getVendorPrefixedName(property) {
+  var name = camelize(property);
+  if (memoized[name] === undefined) {
+    var capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+    if (prefixRegex.test(capitalizedName)) {
+      invariant(false, 'getVendorPrefixedName must only be called with unprefixed' + 'CSS property names. It was called with %s', property);
+    }
+    memoized[name] = name in testStyle ? name : getWithPrefix(capitalizedName);
+  }
+  return memoized[name];
+}
+
+module.exports = getVendorPrefixedName;
+},{"./ExecutionEnvironment":7,"./camelize":37,"./invariant":45}],45:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule invariant
+ */
+
+'use strict';
+
+/**
+ * Use invariant() to assert state which your program assumes to be true.
+ *
+ * Provide sprintf-style format (only %s is supported) and arguments
+ * to provide information about what broke and what you were
+ * expecting.
+ *
+ * The invariant message will be stripped in production, but the invariant
+ * will remain to ensure logic does not differ in production.
+ */
+
+var invariant = function invariant(condition, format, a, b, c, d, e, f) {
+  if (process.env.NODE_ENV !== 'production') {
+    if (format === undefined) {
+      throw new Error('invariant requires an error message argument');
+    }
+  }
+
+  if (!condition) {
+    var error;
+    if (format === undefined) {
+      error = new Error('Minified exception occurred; use the non-minified dev environment ' + 'for the full error message and additional helpful warnings.');
+    } else {
+      var args = [a, b, c, d, e, f];
+      var argIndex = 0;
+      error = new Error('Invariant Violation: ' + format.replace(/%s/g, function () {
+        return args[argIndex++];
+      }));
+    }
+
+    error.framesToPop = 1; // we don't care about invariant's own frame
+    throw error;
+  }
+};
+
+module.exports = invariant;
+}).call(this,require('_process'))
+
+},{"_process":3}],46:[function(require,module,exports){
+/**
+ * Copyright 2013-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule isEventSupported
+ */
+
+'use strict';
+
+var ExecutionEnvironment = require('./ExecutionEnvironment');
+
+var useHasFeature;
+if (ExecutionEnvironment.canUseDOM) {
+  useHasFeature = document.implementation && document.implementation.hasFeature &&
+  // always returns true in newer browsers as per the standard.
+  // @see http://dom.spec.whatwg.org/#dom-domimplementation-hasfeature
+  document.implementation.hasFeature('', '') !== true;
+}
+
+/**
+ * Checks if an event is supported in the current execution environment.
+ *
+ * NOTE: This will not work correctly for non-generic events such as `change`,
+ * `reset`, `load`, `error`, and `select`.
+ *
+ * Borrows from Modernizr.
+ *
+ * @param {string} eventNameSuffix Event name, e.g. "click".
+ * @param {?boolean} capture Check if the capture phase is supported.
+ * @return {boolean} True if the event is supported.
+ * @internal
+ * @license Modernizr 3.0.0pre (Custom Build) | MIT
+ */
+function isEventSupported(eventNameSuffix, capture) {
+  if (!ExecutionEnvironment.canUseDOM || capture && !('addEventListener' in document)) {
+    return false;
+  }
+
+  var eventName = 'on' + eventNameSuffix;
+  var isSupported = (eventName in document);
+
+  if (!isSupported) {
+    var element = document.createElement('div');
+    element.setAttribute(eventName, 'return;');
+    isSupported = typeof element[eventName] === 'function';
+  }
+
+  if (!isSupported && useHasFeature && eventNameSuffix === 'wheel') {
+    // This is the only way to test support for the `wheel` event in IE9+.
+    isSupported = document.implementation.hasFeature('Events.wheel', '3.0');
+  }
+
+  return isSupported;
+}
+
+module.exports = isEventSupported;
+},{"./ExecutionEnvironment":7}],47:[function(require,module,exports){
+/**
+ * Copyright 2013-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule joinClasses
+ * @typechecks static-only
+ */
+
+'use strict';
+
+/**
+ * Combines multiple className strings into one.
+ * http://jsperf.com/joinclasses-args-vs-array
+ *
+ * @param {...?string} className
+ * @return {string}
+ */
+function joinClasses(className /*, ... */) {
+  if (!className) {
+    className = '';
+  }
+  var nextClass;
+  var argLength = arguments.length;
+  if (argLength > 1) {
+    for (var ii = 1; ii < argLength; ii++) {
+      nextClass = arguments[ii];
+      if (nextClass) {
+        className = (className ? className + ' ' : '') + nextClass;
+      }
+    }
+  }
+  return className;
+}
+
+module.exports = joinClasses;
+},{}],48:[function(require,module,exports){
+(function (global){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule nativeRequestAnimationFrame
+ */
+
+"use strict";
+
+var nativeRequestAnimationFrame = global.requestAnimationFrame || global.webkitRequestAnimationFrame || global.mozRequestAnimationFrame || global.oRequestAnimationFrame || global.msRequestAnimationFrame;
+
+module.exports = nativeRequestAnimationFrame;
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+
+},{}],49:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule normalizeWheel
+ * @typechecks
+ */
+
+'use strict';
+
+var UserAgent_DEPRECATED = require('./UserAgent_DEPRECATED');
+
+var isEventSupported = require('./isEventSupported');
+
+// Reasonable defaults
+var PIXEL_STEP = 10;
+var LINE_HEIGHT = 40;
+var PAGE_HEIGHT = 800;
+
+/**
+ * Mouse wheel (and 2-finger trackpad) support on the web sucks.  It is
+ * complicated, thus this doc is long and (hopefully) detailed enough to answer
+ * your questions.
+ *
+ * If you need to react to the mouse wheel in a predictable way, this code is
+ * like your bestest friend. * hugs *
+ *
+ * As of today, there are 4 DOM event types you can listen to:
+ *
+ *   'wheel'                -- Chrome(31+), FF(17+), IE(9+)
+ *   'mousewheel'           -- Chrome, IE(6+), Opera, Safari
+ *   'MozMousePixelScroll'  -- FF(3.5 only!) (2010-2013) -- don't bother!
+ *   'DOMMouseScroll'       -- FF(0.9.7+) since 2003
+ *
+ * So what to do?  The is the best:
+ *
+ *   normalizeWheel.getEventType();
+ *
+ * In your event callback, use this code to get sane interpretation of the
+ * deltas.  This code will return an object with properties:
+ *
+ *   spinX   -- normalized spin speed (use for zoom) - x plane
+ *   spinY   -- " - y plane
+ *   pixelX  -- normalized distance (to pixels) - x plane
+ *   pixelY  -- " - y plane
+ *
+ * Wheel values are provided by the browser assuming you are using the wheel to
+ * scroll a web page by a number of lines or pixels (or pages).  Values can vary
+ * significantly on different platforms and browsers, forgetting that you can
+ * scroll at different speeds.  Some devices (like trackpads) emit more events
+ * at smaller increments with fine granularity, and some emit massive jumps with
+ * linear speed or acceleration.
+ *
+ * This code does its best to normalize the deltas for you:
+ *
+ *   - spin is trying to normalize how far the wheel was spun (or trackpad
+ *     dragged).  This is super useful for zoom support where you want to
+ *     throw away the chunky scroll steps on the PC and make those equal to
+ *     the slow and smooth tiny steps on the Mac. Key data: This code tries to
+ *     resolve a single slow step on a wheel to 1.
+ *
+ *   - pixel is normalizing the desired scroll delta in pixel units.  You'll
+ *     get the crazy differences between browsers, but at least it'll be in
+ *     pixels!
+ *
+ *   - positive value indicates scrolling DOWN/RIGHT, negative UP/LEFT.  This
+ *     should translate to positive value zooming IN, negative zooming OUT.
+ *     This matches the newer 'wheel' event.
+ *
+ * Why are there spinX, spinY (or pixels)?
+ *
+ *   - spinX is a 2-finger side drag on the trackpad, and a shift + wheel turn
+ *     with a mouse.  It results in side-scrolling in the browser by default.
+ *
+ *   - spinY is what you expect -- it's the classic axis of a mouse wheel.
+ *
+ *   - I dropped spinZ/pixelZ.  It is supported by the DOM 3 'wheel' event and
+ *     probably is by browsers in conjunction with fancy 3D controllers .. but
+ *     you know.
+ *
+ * Implementation info:
+ *
+ * Examples of 'wheel' event if you scroll slowly (down) by one step with an
+ * average mouse:
+ *
+ *   OS X + Chrome  (mouse)     -    4   pixel delta  (wheelDelta -120)
+ *   OS X + Safari  (mouse)     -  N/A   pixel delta  (wheelDelta  -12)
+ *   OS X + Firefox (mouse)     -    0.1 line  delta  (wheelDelta  N/A)
+ *   Win8 + Chrome  (mouse)     -  100   pixel delta  (wheelDelta -120)
+ *   Win8 + Firefox (mouse)     -    3   line  delta  (wheelDelta -120)
+ *
+ * On the trackpad:
+ *
+ *   OS X + Chrome  (trackpad)  -    2   pixel delta  (wheelDelta   -6)
+ *   OS X + Firefox (trackpad)  -    1   pixel delta  (wheelDelta  N/A)
+ *
+ * On other/older browsers.. it's more complicated as there can be multiple and
+ * also missing delta values.
+ *
+ * The 'wheel' event is more standard:
+ *
+ * http://www.w3.org/TR/DOM-Level-3-Events/#events-wheelevents
+ *
+ * The basics is that it includes a unit, deltaMode (pixels, lines, pages), and
+ * deltaX, deltaY and deltaZ.  Some browsers provide other values to maintain
+ * backward compatibility with older events.  Those other values help us
+ * better normalize spin speed.  Example of what the browsers provide:
+ *
+ *                          | event.wheelDelta | event.detail
+ *        ------------------+------------------+--------------
+ *          Safari v5/OS X  |       -120       |       0
+ *          Safari v5/Win7  |       -120       |       0
+ *         Chrome v17/OS X  |       -120       |       0
+ *         Chrome v17/Win7  |       -120       |       0
+ *                IE9/Win7  |       -120       |   undefined
+ *         Firefox v4/OS X  |     undefined    |       1
+ *         Firefox v4/Win7  |     undefined    |       3
+ *
+ */
+function normalizeWheel( /*object*/event) /*object*/{
+  var sX = 0,
+      sY = 0,
+      // spinX, spinY
+  pX = 0,
+      pY = 0; // pixelX, pixelY
+
+  // Legacy
+  if ('detail' in event) {
+    sY = event.detail;
+  }
+  if ('wheelDelta' in event) {
+    sY = -event.wheelDelta / 120;
+  }
+  if ('wheelDeltaY' in event) {
+    sY = -event.wheelDeltaY / 120;
+  }
+  if ('wheelDeltaX' in event) {
+    sX = -event.wheelDeltaX / 120;
+  }
+
+  // side scrolling on FF with DOMMouseScroll
+  if ('axis' in event && event.axis === event.HORIZONTAL_AXIS) {
+    sX = sY;
+    sY = 0;
+  }
+
+  pX = sX * PIXEL_STEP;
+  pY = sY * PIXEL_STEP;
+
+  if ('deltaY' in event) {
+    pY = event.deltaY;
+  }
+  if ('deltaX' in event) {
+    pX = event.deltaX;
+  }
+
+  if ((pX || pY) && event.deltaMode) {
+    if (event.deltaMode == 1) {
+      // delta in LINE units
+      pX *= LINE_HEIGHT;
+      pY *= LINE_HEIGHT;
+    } else {
+      // delta in PAGE units
+      pX *= PAGE_HEIGHT;
+      pY *= PAGE_HEIGHT;
+    }
+  }
+
+  // Fall-back if spin cannot be determined
+  if (pX && !sX) {
+    sX = pX < 1 ? -1 : 1;
+  }
+  if (pY && !sY) {
+    sY = pY < 1 ? -1 : 1;
+  }
+
+  return { spinX: sX,
+    spinY: sY,
+    pixelX: pX,
+    pixelY: pY };
+}
+
+/**
+ * The best combination if you prefer spinX + spinY normalization.  It favors
+ * the older DOMMouseScroll for Firefox, as FF does not include wheelDelta with
+ * 'wheel' event, making spin speed determination impossible.
+ */
+normalizeWheel.getEventType = function () /*string*/{
+  return UserAgent_DEPRECATED.firefox() ? 'DOMMouseScroll' : isEventSupported('wheel') ? 'wheel' : 'mousewheel';
+};
+
+module.exports = normalizeWheel;
+},{"./UserAgent_DEPRECATED":36,"./isEventSupported":46}],50:[function(require,module,exports){
+(function (global){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule requestAnimationFramePolyfill
+ */
+
+'use strict';
+
+var emptyFunction = require('./emptyFunction');
+var nativeRequestAnimationFrame = require('./nativeRequestAnimationFrame');
+
+var lastTime = 0;
+
+/**
+ * Here is the native and polyfill version of requestAnimationFrame.
+ * Please don't use it directly and use requestAnimationFrame module instead.
+ */
+var requestAnimationFrame = nativeRequestAnimationFrame || function (callback) {
+  var currTime = Date.now();
+  var timeDelay = Math.max(0, 16 - (currTime - lastTime));
+  lastTime = currTime + timeDelay;
+  return global.setTimeout(function () {
+    callback(Date.now());
+  }, timeDelay);
+};
+
+// Works around a rare bug in Safari 6 where the first request is never invoked.
+requestAnimationFrame(emptyFunction);
+
+module.exports = requestAnimationFrame;
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+
+},{"./emptyFunction":43,"./nativeRequestAnimationFrame":48}],51:[function(require,module,exports){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule shallowEqual
+ * @typechecks
+ * @flow
+ */
+
+'use strict';
+
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+/**
+ * Performs equality by iterating through keys on an object and returning false
+ * when any key has values which are not strictly equal between the arguments.
+ * Returns true when the values of all keys are strictly equal.
+ */
+function shallowEqual(objA, objB) {
+  if (objA === objB) {
+    return true;
+  }
+
+  if (typeof objA !== 'object' || objA === null || typeof objB !== 'object' || objB === null) {
+    return false;
+  }
+
+  var keysA = Object.keys(objA);
+  var keysB = Object.keys(objB);
+
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+
+  // Test for A's keys different from B.
+  var bHasOwnProperty = hasOwnProperty.bind(objB);
+  for (var i = 0; i < keysA.length; i++) {
+    if (!bHasOwnProperty(keysA[i]) || objA[keysA[i]] !== objB[keysA[i]]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+module.exports = shallowEqual;
+},{}],52:[function(require,module,exports){
+(function (global){
+/**
+ * Copyright (c) 2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ *
+ * @providesModule translateDOMPositionXY
+ * @typechecks
+ */
+
+'use strict';
+
+var BrowserSupportCore = require('./BrowserSupportCore');
+
+var getVendorPrefixedName = require('./getVendorPrefixedName');
+
+var TRANSFORM = getVendorPrefixedName('transform');
+var BACKFACE_VISIBILITY = getVendorPrefixedName('backfaceVisibility');
+
+var translateDOMPositionXY = (function () {
+  if (BrowserSupportCore.hasCSSTransforms()) {
+    var ua = global.window ? global.window.navigator.userAgent : 'UNKNOWN';
+    var isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua);
+    // It appears that Safari messes up the composition order
+    // of GPU-accelerated layers
+    // (see bug https://bugs.webkit.org/show_bug.cgi?id=61824).
+    // Use 2D translation instead.
+    if (!isSafari && BrowserSupportCore.hasCSS3DTransforms()) {
+      return function ( /*object*/style, /*number*/x, /*number*/y) {
+        style[TRANSFORM] = 'translate3d(' + x + 'px,' + y + 'px,0)';
+        style[BACKFACE_VISIBILITY] = 'hidden';
+      };
+    } else {
+      return function ( /*object*/style, /*number*/x, /*number*/y) {
+        style[TRANSFORM] = 'translate(' + x + 'px,' + y + 'px)';
+      };
+    }
+  } else {
+    return function ( /*object*/style, /*number*/x, /*number*/y) {
+      style.left = x + 'px';
+      style.top = y + 'px';
+    };
+  }
+})();
+
+module.exports = translateDOMPositionXY;
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+
+},{"./BrowserSupportCore":4,"./getVendorPrefixedName":44}],53:[function(require,module,exports){
+module.exports = require('./internal/FixedDataTableRoot');
+
+},{"./internal/FixedDataTableRoot":21}],54:[function(require,module,exports){
+/**
  * Copyright (c) 2014-2015, Facebook, Inc.
  * All rights reserved.
  *
@@ -401,7 +6912,7 @@ process.umask = function() { return 0; };
 
 module.exports.Dispatcher = require('./lib/Dispatcher');
 
-},{"./lib/Dispatcher":5}],5:[function(require,module,exports){
+},{"./lib/Dispatcher":55}],55:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2014-2015, Facebook, Inc.
@@ -636,7 +7147,7 @@ var Dispatcher = (function () {
 module.exports = Dispatcher;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":6}],6:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":56}],56:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -689,46 +7200,44 @@ var invariant = function (condition, format, a, b, c, d, e, f) {
 module.exports = invariant;
 }).call(this,require('_process'))
 
-},{"_process":3}],7:[function(require,module,exports){
+},{"_process":3}],57:[function(require,module,exports){
+/**
+ * Indicates that navigation was caused by a call to history.push.
+ */
 'use strict';
 
-function ToObject(val) {
-	if (val == null) {
-		throw new TypeError('Object.assign cannot be called with null or undefined');
-	}
+exports.__esModule = true;
+var PUSH = 'PUSH';
 
-	return Object(val);
-}
+exports.PUSH = PUSH;
+/**
+ * Indicates that navigation was caused by a call to history.replace.
+ */
+var REPLACE = 'REPLACE';
 
-module.exports = Object.assign || function (target, source) {
-	var from;
-	var keys;
-	var to = ToObject(target);
+exports.REPLACE = REPLACE;
+/**
+ * Indicates that navigation was caused by some other action such
+ * as using a browser's back/forward buttons and/or manually manipulating
+ * the URL in a browser's location bar. This is the default.
+ *
+ * See https://developer.mozilla.org/en-US/docs/Web/API/WindowEventHandlers/onpopstate
+ * for more information.
+ */
+var POP = 'POP';
 
-	for (var s = 1; s < arguments.length; s++) {
-		from = arguments[s];
-		keys = Object.keys(Object(from));
-
-		for (var i = 0; i < keys.length; i++) {
-			to[keys[i]] = from[keys[i]];
-		}
-	}
-
-	return to;
+exports.POP = POP;
+exports['default'] = {
+  PUSH: PUSH,
+  REPLACE: REPLACE,
+  POP: POP
 };
-
-},{}],8:[function(require,module,exports){
-'use strict';
-
-module.exports = require('react/lib/ReactDOM');
-
-},{"react/lib/ReactDOM":100}],9:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
 var _slice = Array.prototype.slice;
 exports.loopAsync = loopAsync;
-exports.mapAsync = mapAsync;
 
 function loopAsync(turns, work, callback) {
   var currentTurn = 0,
@@ -782,2925 +7291,7 @@ function loopAsync(turns, work, callback) {
 
   next();
 }
-
-function mapAsync(array, work, callback) {
-  var length = array.length;
-  var values = [];
-
-  if (length === 0) return callback(null, values);
-
-  var isDone = false,
-      doneCount = 0;
-
-  function done(index, error, value) {
-    if (isDone) return;
-
-    if (error) {
-      isDone = true;
-      callback(error);
-    } else {
-      values[index] = value;
-
-      isDone = ++doneCount === length;
-
-      if (isDone) callback(null, values);
-    }
-  }
-
-  array.forEach(function (item, index) {
-    work(item, index, function (error, value) {
-      done(index, error, value);
-    });
-  });
-}
-},{}],10:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _PropTypes = require('./PropTypes');
-
-/**
- * A mixin that adds the "history" instance variable to components.
- */
-var History = {
-
-  contextTypes: {
-    history: _PropTypes.history
-  },
-
-  componentWillMount: function componentWillMount() {
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'the `History` mixin is deprecated, please access `context.router` with your own `contextTypes`. http://tiny.cc/router-historymixin') : undefined;
-    this.history = this.context.history;
-  }
-
-};
-
-exports['default'] = History;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./PropTypes":17,"./routerWarning":40,"_process":3}],11:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _Link = require('./Link');
-
-var _Link2 = _interopRequireDefault(_Link);
-
-/**
- * An <IndexLink> is used to link to an <IndexRoute>.
- */
-var IndexLink = _react2['default'].createClass({
-  displayName: 'IndexLink',
-
-  render: function render() {
-    return _react2['default'].createElement(_Link2['default'], _extends({}, this.props, { onlyActiveOnIndex: true }));
-  }
-
-});
-
-exports['default'] = IndexLink;
-module.exports = exports['default'];
-},{"./Link":15,"react":221}],12:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var _Redirect = require('./Redirect');
-
-var _Redirect2 = _interopRequireDefault(_Redirect);
-
-var _PropTypes = require('./PropTypes');
-
-var _React$PropTypes = _react2['default'].PropTypes;
-var string = _React$PropTypes.string;
-var object = _React$PropTypes.object;
-
-/**
- * An <IndexRedirect> is used to redirect from an indexRoute.
- */
-var IndexRedirect = _react2['default'].createClass({
-  displayName: 'IndexRedirect',
-
-  statics: {
-
-    createRouteFromReactElement: function createRouteFromReactElement(element, parentRoute) {
-      /* istanbul ignore else: sanity check */
-      if (parentRoute) {
-        parentRoute.indexRoute = _Redirect2['default'].createRouteFromReactElement(element);
-      } else {
-        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'An <IndexRedirect> does not make sense at the root of your route config') : undefined;
-      }
-    }
-
-  },
-
-  propTypes: {
-    to: string.isRequired,
-    query: object,
-    state: object,
-    onEnter: _PropTypes.falsy,
-    children: _PropTypes.falsy
-  },
-
-  /* istanbul ignore next: sanity check */
-  render: function render() {
-    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<IndexRedirect> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
-  }
-
-});
-
-exports['default'] = IndexRedirect;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./PropTypes":17,"./Redirect":18,"./routerWarning":40,"_process":3,"invariant":64,"react":221}],13:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var _RouteUtils = require('./RouteUtils');
-
-var _PropTypes = require('./PropTypes');
-
-var func = _react2['default'].PropTypes.func;
-
-/**
- * An <IndexRoute> is used to specify its parent's <Route indexRoute> in
- * a JSX route config.
- */
-var IndexRoute = _react2['default'].createClass({
-  displayName: 'IndexRoute',
-
-  statics: {
-
-    createRouteFromReactElement: function createRouteFromReactElement(element, parentRoute) {
-      /* istanbul ignore else: sanity check */
-      if (parentRoute) {
-        parentRoute.indexRoute = _RouteUtils.createRouteFromReactElement(element);
-      } else {
-        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'An <IndexRoute> does not make sense at the root of your route config') : undefined;
-      }
-    }
-
-  },
-
-  propTypes: {
-    path: _PropTypes.falsy,
-    component: _PropTypes.component,
-    components: _PropTypes.components,
-    getComponent: func,
-    getComponents: func
-  },
-
-  /* istanbul ignore next: sanity check */
-  render: function render() {
-    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<IndexRoute> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
-  }
-
-});
-
-exports['default'] = IndexRoute;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./PropTypes":17,"./RouteUtils":21,"./routerWarning":40,"_process":3,"invariant":64,"react":221}],14:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var object = _react2['default'].PropTypes.object;
-
-/**
- * The Lifecycle mixin adds the routerWillLeave lifecycle method to a
- * component that may be used to cancel a transition or prompt the user
- * for confirmation.
- *
- * On standard transitions, routerWillLeave receives a single argument: the
- * location we're transitioning to. To cancel the transition, return false.
- * To prompt the user for confirmation, return a prompt message (string).
- *
- * During the beforeunload event (assuming you're using the useBeforeUnload
- * history enhancer), routerWillLeave does not receive a location object
- * because it isn't possible for us to know the location we're transitioning
- * to. In this case routerWillLeave must return a prompt message to prevent
- * the user from closing the window/tab.
- */
-var Lifecycle = {
-
-  contextTypes: {
-    history: object.isRequired,
-    // Nested children receive the route as context, either
-    // set by the route component using the RouteContext mixin
-    // or by some other ancestor.
-    route: object
-  },
-
-  propTypes: {
-    // Route components receive the route object as a prop.
-    route: object
-  },
-
-  componentDidMount: function componentDidMount() {
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'the `Lifecycle` mixin is deprecated, please use `context.router.setRouteLeaveHook(route, hook)`. http://tiny.cc/router-lifecyclemixin') : undefined;
-    !this.routerWillLeave ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'The Lifecycle mixin requires you to define a routerWillLeave method') : _invariant2['default'](false) : undefined;
-
-    var route = this.props.route || this.context.route;
-
-    !route ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'The Lifecycle mixin must be used on either a) a <Route component> or ' + 'b) a descendant of a <Route component> that uses the RouteContext mixin') : _invariant2['default'](false) : undefined;
-
-    this._unlistenBeforeLeavingRoute = this.context.history.listenBeforeLeavingRoute(route, this.routerWillLeave);
-  },
-
-  componentWillUnmount: function componentWillUnmount() {
-    if (this._unlistenBeforeLeavingRoute) this._unlistenBeforeLeavingRoute();
-  }
-
-};
-
-exports['default'] = Lifecycle;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./routerWarning":40,"_process":3,"invariant":64,"react":221}],15:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _React$PropTypes = _react2['default'].PropTypes;
-var bool = _React$PropTypes.bool;
-var object = _React$PropTypes.object;
-var string = _React$PropTypes.string;
-var func = _React$PropTypes.func;
-var oneOfType = _React$PropTypes.oneOfType;
-
-function isLeftClickEvent(event) {
-  return event.button === 0;
-}
-
-function isModifiedEvent(event) {
-  return !!(event.metaKey || event.altKey || event.ctrlKey || event.shiftKey);
-}
-
-function isEmptyObject(object) {
-  for (var p in object) {
-    if (object.hasOwnProperty(p)) return false;
-  }return true;
-}
-
-function createLocationDescriptor(to, _ref) {
-  var query = _ref.query;
-  var hash = _ref.hash;
-  var state = _ref.state;
-
-  if (query || hash || state) {
-    return { pathname: to, query: query, hash: hash, state: state };
-  }
-
-  return to;
-}
-
-/**
- * A <Link> is used to create an <a> element that links to a route.
- * When that route is active, the link gets the value of its
- * activeClassName prop.
- *
- * For example, assuming you have the following route:
- *
- *   <Route path="/posts/:postID" component={Post} />
- *
- * You could use the following component to link to that route:
- *
- *   <Link to={`/posts/${post.id}`} />
- *
- * Links may pass along location state and/or query string parameters
- * in the state/query props, respectively.
- *
- *   <Link ... query={{ show: true }} state={{ the: 'state' }} />
- */
-var Link = _react2['default'].createClass({
-  displayName: 'Link',
-
-  contextTypes: {
-    router: object
-  },
-
-  propTypes: {
-    to: oneOfType([string, object]).isRequired,
-    query: object,
-    hash: string,
-    state: object,
-    activeStyle: object,
-    activeClassName: string,
-    onlyActiveOnIndex: bool.isRequired,
-    onClick: func
-  },
-
-  getDefaultProps: function getDefaultProps() {
-    return {
-      onlyActiveOnIndex: false,
-      className: '',
-      style: {}
-    };
-  },
-
-  handleClick: function handleClick(event) {
-    var allowTransition = true;
-
-    if (this.props.onClick) this.props.onClick(event);
-
-    if (isModifiedEvent(event) || !isLeftClickEvent(event)) return;
-
-    if (event.defaultPrevented === true) allowTransition = false;
-
-    // If target prop is set (e.g. to "_blank") let browser handle link.
-    /* istanbul ignore if: untestable with Karma */
-    if (this.props.target) {
-      if (!allowTransition) event.preventDefault();
-
-      return;
-    }
-
-    event.preventDefault();
-
-    if (allowTransition) {
-      var _props = this.props;
-      var to = _props.to;
-      var query = _props.query;
-      var hash = _props.hash;
-      var state = _props.state;
-
-      var _location = createLocationDescriptor(to, { query: query, hash: hash, state: state });
-
-      this.context.router.push(_location);
-    }
-  },
-
-  render: function render() {
-    var _props2 = this.props;
-    var to = _props2.to;
-    var query = _props2.query;
-    var hash = _props2.hash;
-    var state = _props2.state;
-    var activeClassName = _props2.activeClassName;
-    var activeStyle = _props2.activeStyle;
-    var onlyActiveOnIndex = _props2.onlyActiveOnIndex;
-
-    var props = _objectWithoutProperties(_props2, ['to', 'query', 'hash', 'state', 'activeClassName', 'activeStyle', 'onlyActiveOnIndex']);
-
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](!(query || hash || state), 'the `query`, `hash`, and `state` props on `<Link>` are deprecated, use `<Link to={{ pathname, query, hash, state }}/>. http://tiny.cc/router-isActivedeprecated') : undefined;
-
-    // Ignore if rendered outside the context of router, simplifies unit testing.
-    var router = this.context.router;
-
-    if (router) {
-      var _location2 = createLocationDescriptor(to, { query: query, hash: hash, state: state });
-      props.href = router.createHref(_location2);
-
-      if (activeClassName || activeStyle != null && !isEmptyObject(activeStyle)) {
-        if (router.isActive(_location2, onlyActiveOnIndex)) {
-          if (activeClassName) props.className += props.className === '' ? activeClassName : ' ' + activeClassName;
-
-          if (activeStyle) props.style = _extends({}, props.style, activeStyle);
-        }
-      }
-    }
-
-    return _react2['default'].createElement('a', _extends({}, props, { onClick: this.handleClick }));
-  }
-
-});
-
-exports['default'] = Link;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./routerWarning":40,"_process":3,"react":221}],16:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-exports.compilePattern = compilePattern;
-exports.matchPattern = matchPattern;
-exports.getParamNames = getParamNames;
-exports.getParams = getParams;
-exports.formatPattern = formatPattern;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function escapeSource(string) {
-  return escapeRegExp(string).replace(/\/+/g, '/+');
-}
-
-function _compilePattern(pattern) {
-  var regexpSource = '';
-  var paramNames = [];
-  var tokens = [];
-
-  var match = undefined,
-      lastIndex = 0,
-      matcher = /:([a-zA-Z_$][a-zA-Z0-9_$]*)|\*\*|\*|\(|\)/g;
-  while (match = matcher.exec(pattern)) {
-    if (match.index !== lastIndex) {
-      tokens.push(pattern.slice(lastIndex, match.index));
-      regexpSource += escapeSource(pattern.slice(lastIndex, match.index));
-    }
-
-    if (match[1]) {
-      regexpSource += '([^/?#]+)';
-      paramNames.push(match[1]);
-    } else if (match[0] === '**') {
-      regexpSource += '([\\s\\S]*)';
-      paramNames.push('splat');
-    } else if (match[0] === '*') {
-      regexpSource += '([\\s\\S]*?)';
-      paramNames.push('splat');
-    } else if (match[0] === '(') {
-      regexpSource += '(?:';
-    } else if (match[0] === ')') {
-      regexpSource += ')?';
-    }
-
-    tokens.push(match[0]);
-
-    lastIndex = matcher.lastIndex;
-  }
-
-  if (lastIndex !== pattern.length) {
-    tokens.push(pattern.slice(lastIndex, pattern.length));
-    regexpSource += escapeSource(pattern.slice(lastIndex, pattern.length));
-  }
-
-  return {
-    pattern: pattern,
-    regexpSource: regexpSource,
-    paramNames: paramNames,
-    tokens: tokens
-  };
-}
-
-var CompiledPatternsCache = {};
-
-function compilePattern(pattern) {
-  if (!(pattern in CompiledPatternsCache)) CompiledPatternsCache[pattern] = _compilePattern(pattern);
-
-  return CompiledPatternsCache[pattern];
-}
-
-/**
- * Attempts to match a pattern on the given pathname. Patterns may use
- * the following special characters:
- *
- * - :paramName     Matches a URL segment up to the next /, ?, or #. The
- *                  captured string is considered a "param"
- * - ()             Wraps a segment of the URL that is optional
- * - *              Consumes (non-greedy) all characters up to the next
- *                  character in the pattern, or to the end of the URL if
- *                  there is none
- * - **             Consumes (greedy) all characters up to the next character
- *                  in the pattern, or to the end of the URL if there is none
- *
- * The return value is an object with the following properties:
- *
- * - remainingPathname
- * - paramNames
- * - paramValues
- */
-
-function matchPattern(pattern, pathname) {
-  // Make leading slashes consistent between pattern and pathname.
-  if (pattern.charAt(0) !== '/') {
-    pattern = '/' + pattern;
-  }
-  if (pathname.charAt(0) !== '/') {
-    pathname = '/' + pathname;
-  }
-
-  var _compilePattern2 = compilePattern(pattern);
-
-  var regexpSource = _compilePattern2.regexpSource;
-  var paramNames = _compilePattern2.paramNames;
-  var tokens = _compilePattern2.tokens;
-
-  regexpSource += '/*'; // Capture path separators
-
-  // Special-case patterns like '*' for catch-all routes.
-  var captureRemaining = tokens[tokens.length - 1] !== '*';
-
-  if (captureRemaining) {
-    // This will match newlines in the remaining path.
-    regexpSource += '([\\s\\S]*?)';
-  }
-
-  var match = pathname.match(new RegExp('^' + regexpSource + '$', 'i'));
-
-  var remainingPathname = undefined,
-      paramValues = undefined;
-  if (match != null) {
-    if (captureRemaining) {
-      remainingPathname = match.pop();
-      var matchedPath = match[0].substr(0, match[0].length - remainingPathname.length);
-
-      // If we didn't match the entire pathname, then make sure that the match
-      // we did get ends at a path separator (potentially the one we added
-      // above at the beginning of the path, if the actual match was empty).
-      if (remainingPathname && matchedPath.charAt(matchedPath.length - 1) !== '/') {
-        return {
-          remainingPathname: null,
-          paramNames: paramNames,
-          paramValues: null
-        };
-      }
-    } else {
-      // If this matched at all, then the match was the entire pathname.
-      remainingPathname = '';
-    }
-
-    paramValues = match.slice(1).map(function (v) {
-      return v != null ? decodeURIComponent(v) : v;
-    });
-  } else {
-    remainingPathname = paramValues = null;
-  }
-
-  return {
-    remainingPathname: remainingPathname,
-    paramNames: paramNames,
-    paramValues: paramValues
-  };
-}
-
-function getParamNames(pattern) {
-  return compilePattern(pattern).paramNames;
-}
-
-function getParams(pattern, pathname) {
-  var _matchPattern = matchPattern(pattern, pathname);
-
-  var paramNames = _matchPattern.paramNames;
-  var paramValues = _matchPattern.paramValues;
-
-  if (paramValues != null) {
-    return paramNames.reduce(function (memo, paramName, index) {
-      memo[paramName] = paramValues[index];
-      return memo;
-    }, {});
-  }
-
-  return null;
-}
-
-/**
- * Returns a version of the given pattern with params interpolated. Throws
- * if there is a dynamic segment of the pattern for which there is no param.
- */
-
-function formatPattern(pattern, params) {
-  params = params || {};
-
-  var _compilePattern3 = compilePattern(pattern);
-
-  var tokens = _compilePattern3.tokens;
-
-  var parenCount = 0,
-      pathname = '',
-      splatIndex = 0;
-
-  var token = undefined,
-      paramName = undefined,
-      paramValue = undefined;
-  for (var i = 0, len = tokens.length; i < len; ++i) {
-    token = tokens[i];
-
-    if (token === '*' || token === '**') {
-      paramValue = Array.isArray(params.splat) ? params.splat[splatIndex++] : params.splat;
-
-      !(paramValue != null || parenCount > 0) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'Missing splat #%s for path "%s"', splatIndex, pattern) : _invariant2['default'](false) : undefined;
-
-      if (paramValue != null) pathname += encodeURI(paramValue);
-    } else if (token === '(') {
-      parenCount += 1;
-    } else if (token === ')') {
-      parenCount -= 1;
-    } else if (token.charAt(0) === ':') {
-      paramName = token.substring(1);
-      paramValue = params[paramName];
-
-      !(paramValue != null || parenCount > 0) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'Missing "%s" parameter for path "%s"', paramName, pattern) : _invariant2['default'](false) : undefined;
-
-      if (paramValue != null) pathname += encodeURIComponent(paramValue);
-    } else {
-      pathname += token;
-    }
-  }
-
-  return pathname.replace(/\/+/g, '/');
-}
-}).call(this,require('_process'))
-
-},{"_process":3,"invariant":64}],17:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-exports.falsy = falsy;
-
-var _react = require('react');
-
-var func = _react.PropTypes.func;
-var object = _react.PropTypes.object;
-var arrayOf = _react.PropTypes.arrayOf;
-var oneOfType = _react.PropTypes.oneOfType;
-var element = _react.PropTypes.element;
-var shape = _react.PropTypes.shape;
-var string = _react.PropTypes.string;
-
-function falsy(props, propName, componentName) {
-  if (props[propName]) return new Error('<' + componentName + '> should not have a "' + propName + '" prop');
-}
-
-var history = shape({
-  listen: func.isRequired,
-  pushState: func.isRequired,
-  replaceState: func.isRequired,
-  go: func.isRequired
-});
-
-exports.history = history;
-var location = shape({
-  pathname: string.isRequired,
-  search: string.isRequired,
-  state: object,
-  action: string.isRequired,
-  key: string
-});
-
-exports.location = location;
-var component = oneOfType([func, string]);
-exports.component = component;
-var components = oneOfType([component, object]);
-exports.components = components;
-var route = oneOfType([object, element]);
-exports.route = route;
-var routes = oneOfType([route, arrayOf(route)]);
-
-exports.routes = routes;
-exports['default'] = {
-  falsy: falsy,
-  history: history,
-  location: location,
-  component: component,
-  components: components,
-  route: route
-};
-},{"react":221}],18:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var _RouteUtils = require('./RouteUtils');
-
-var _PatternUtils = require('./PatternUtils');
-
-var _PropTypes = require('./PropTypes');
-
-var _React$PropTypes = _react2['default'].PropTypes;
-var string = _React$PropTypes.string;
-var object = _React$PropTypes.object;
-
-/**
- * A <Redirect> is used to declare another URL path a client should
- * be sent to when they request a given URL.
- *
- * Redirects are placed alongside routes in the route configuration
- * and are traversed in the same manner.
- */
-var Redirect = _react2['default'].createClass({
-  displayName: 'Redirect',
-
-  statics: {
-
-    createRouteFromReactElement: function createRouteFromReactElement(element) {
-      var route = _RouteUtils.createRouteFromReactElement(element);
-
-      if (route.from) route.path = route.from;
-
-      route.onEnter = function (nextState, replace) {
-        var location = nextState.location;
-        var params = nextState.params;
-
-        var pathname = undefined;
-        if (route.to.charAt(0) === '/') {
-          pathname = _PatternUtils.formatPattern(route.to, params);
-        } else if (!route.to) {
-          pathname = location.pathname;
-        } else {
-          var routeIndex = nextState.routes.indexOf(route);
-          var parentPattern = Redirect.getRoutePattern(nextState.routes, routeIndex - 1);
-          var pattern = parentPattern.replace(/\/*$/, '/') + route.to;
-          pathname = _PatternUtils.formatPattern(pattern, params);
-        }
-
-        replace({
-          pathname: pathname,
-          query: route.query || location.query,
-          state: route.state || location.state
-        });
-      };
-
-      return route;
-    },
-
-    getRoutePattern: function getRoutePattern(routes, routeIndex) {
-      var parentPattern = '';
-
-      for (var i = routeIndex; i >= 0; i--) {
-        var route = routes[i];
-        var pattern = route.path || '';
-
-        parentPattern = pattern.replace(/\/*$/, '/') + parentPattern;
-
-        if (pattern.indexOf('/') === 0) break;
-      }
-
-      return '/' + parentPattern;
-    }
-
-  },
-
-  propTypes: {
-    path: string,
-    from: string, // Alias for path
-    to: string.isRequired,
-    query: object,
-    state: object,
-    onEnter: _PropTypes.falsy,
-    children: _PropTypes.falsy
-  },
-
-  /* istanbul ignore next: sanity check */
-  render: function render() {
-    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<Redirect> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
-  }
-
-});
-
-exports['default'] = Redirect;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./PatternUtils":16,"./PropTypes":17,"./RouteUtils":21,"_process":3,"invariant":64,"react":221}],19:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var _RouteUtils = require('./RouteUtils');
-
-var _PropTypes = require('./PropTypes');
-
-var _React$PropTypes = _react2['default'].PropTypes;
-var string = _React$PropTypes.string;
-var func = _React$PropTypes.func;
-
-/**
- * A <Route> is used to declare which components are rendered to the
- * page when the URL matches a given pattern.
- *
- * Routes are arranged in a nested tree structure. When a new URL is
- * requested, the tree is searched depth-first to find a route whose
- * path matches the URL.  When one is found, all routes in the tree
- * that lead to it are considered "active" and their components are
- * rendered into the DOM, nested in the same order as in the tree.
- */
-var Route = _react2['default'].createClass({
-  displayName: 'Route',
-
-  statics: {
-    createRouteFromReactElement: _RouteUtils.createRouteFromReactElement
-  },
-
-  propTypes: {
-    path: string,
-    component: _PropTypes.component,
-    components: _PropTypes.components,
-    getComponent: func,
-    getComponents: func
-  },
-
-  /* istanbul ignore next: sanity check */
-  render: function render() {
-    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<Route> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
-  }
-
-});
-
-exports['default'] = Route;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./PropTypes":17,"./RouteUtils":21,"_process":3,"invariant":64,"react":221}],20:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var object = _react2['default'].PropTypes.object;
-
-/**
- * The RouteContext mixin provides a convenient way for route
- * components to set the route in context. This is needed for
- * routes that render elements that want to use the Lifecycle
- * mixin to prevent transitions.
- */
-var RouteContext = {
-
-  propTypes: {
-    route: object.isRequired
-  },
-
-  childContextTypes: {
-    route: object.isRequired
-  },
-
-  getChildContext: function getChildContext() {
-    return {
-      route: this.props.route
-    };
-  },
-
-  componentWillMount: function componentWillMount() {
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'The `RouteContext` mixin is deprecated. You can provide `this.props.route` on context with your own `contextTypes`. http://tiny.cc/router-routecontextmixin') : undefined;
-  }
-
-};
-
-exports['default'] = RouteContext;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./routerWarning":40,"_process":3,"react":221}],21:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-exports.isReactChildren = isReactChildren;
-exports.createRouteFromReactElement = createRouteFromReactElement;
-exports.createRoutesFromReactChildren = createRoutesFromReactChildren;
-exports.createRoutes = createRoutes;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-function isValidChild(object) {
-  return object == null || _react2['default'].isValidElement(object);
-}
-
-function isReactChildren(object) {
-  return isValidChild(object) || Array.isArray(object) && object.every(isValidChild);
-}
-
-function checkPropTypes(componentName, propTypes, props) {
-  componentName = componentName || 'UnknownComponent';
-
-  for (var propName in propTypes) {
-    if (propTypes.hasOwnProperty(propName)) {
-      var error = propTypes[propName](props, propName, componentName);
-
-      /* istanbul ignore if: error logging */
-      if (error instanceof Error) process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, error.message) : undefined;
-    }
-  }
-}
-
-function createRoute(defaultProps, props) {
-  return _extends({}, defaultProps, props);
-}
-
-function createRouteFromReactElement(element) {
-  var type = element.type;
-  var route = createRoute(type.defaultProps, element.props);
-
-  if (type.propTypes) checkPropTypes(type.displayName || type.name, type.propTypes, route);
-
-  if (route.children) {
-    var childRoutes = createRoutesFromReactChildren(route.children, route);
-
-    if (childRoutes.length) route.childRoutes = childRoutes;
-
-    delete route.children;
-  }
-
-  return route;
-}
-
-/**
- * Creates and returns a routes object from the given ReactChildren. JSX
- * provides a convenient way to visualize how routes in the hierarchy are
- * nested.
- *
- *   import { Route, createRoutesFromReactChildren } from 'react-router'
- *   
- *   const routes = createRoutesFromReactChildren(
- *     <Route component={App}>
- *       <Route path="home" component={Dashboard}/>
- *       <Route path="news" component={NewsFeed}/>
- *     </Route>
- *   )
- *
- * Note: This method is automatically used when you provide <Route> children
- * to a <Router> component.
- */
-
-function createRoutesFromReactChildren(children, parentRoute) {
-  var routes = [];
-
-  _react2['default'].Children.forEach(children, function (element) {
-    if (_react2['default'].isValidElement(element)) {
-      // Component classes may have a static create* method.
-      if (element.type.createRouteFromReactElement) {
-        var route = element.type.createRouteFromReactElement(element, parentRoute);
-
-        if (route) routes.push(route);
-      } else {
-        routes.push(createRouteFromReactElement(element));
-      }
-    }
-  });
-
-  return routes;
-}
-
-/**
- * Creates and returns an array of routes from the given object which
- * may be a JSX route, a plain object route, or an array of either.
- */
-
-function createRoutes(routes) {
-  if (isReactChildren(routes)) {
-    routes = createRoutesFromReactChildren(routes);
-  } else if (routes && !Array.isArray(routes)) {
-    routes = [routes];
-  }
-
-  return routes;
-}
-}).call(this,require('_process'))
-
-},{"./routerWarning":40,"_process":3,"react":221}],22:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
-
-var _historyLibCreateHashHistory = require('history/lib/createHashHistory');
-
-var _historyLibCreateHashHistory2 = _interopRequireDefault(_historyLibCreateHashHistory);
-
-var _historyLibUseQueries = require('history/lib/useQueries');
-
-var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _createTransitionManager = require('./createTransitionManager');
-
-var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
-
-var _PropTypes = require('./PropTypes');
-
-var _RouterContext = require('./RouterContext');
-
-var _RouterContext2 = _interopRequireDefault(_RouterContext);
-
-var _RouteUtils = require('./RouteUtils');
-
-var _RouterUtils = require('./RouterUtils');
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-function isDeprecatedHistory(history) {
-  return !history || !history.__v2_compatible__;
-}
-
-var _React$PropTypes = _react2['default'].PropTypes;
-var func = _React$PropTypes.func;
-var object = _React$PropTypes.object;
-
-/**
- * A <Router> is a high-level API for automatically setting up
- * a router that renders a <RouterContext> with all the props
- * it needs each time the URL changes.
- */
-var Router = _react2['default'].createClass({
-  displayName: 'Router',
-
-  propTypes: {
-    history: object,
-    children: _PropTypes.routes,
-    routes: _PropTypes.routes, // alias for children
-    render: func,
-    createElement: func,
-    onError: func,
-    onUpdate: func,
-
-    // PRIVATE: For client-side rehydration of server match.
-    matchContext: object
-  },
-
-  getDefaultProps: function getDefaultProps() {
-    return {
-      render: function render(props) {
-        return _react2['default'].createElement(_RouterContext2['default'], props);
-      }
-    };
-  },
-
-  getInitialState: function getInitialState() {
-    return {
-      location: null,
-      routes: null,
-      params: null,
-      components: null
-    };
-  },
-
-  handleError: function handleError(error) {
-    if (this.props.onError) {
-      this.props.onError.call(this, error);
-    } else {
-      // Throw errors by default so we don't silently swallow them!
-      throw error; // This error probably occurred in getChildRoutes or getComponents.
-    }
-  },
-
-  componentWillMount: function componentWillMount() {
-    var _this = this;
-
-    var _props = this.props;
-    var parseQueryString = _props.parseQueryString;
-    var stringifyQuery = _props.stringifyQuery;
-
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](!(parseQueryString || stringifyQuery), '`parseQueryString` and `stringifyQuery` are deprecated. Please create a custom history. http://tiny.cc/router-customquerystring') : undefined;
-
-    var _createRouterObjects = this.createRouterObjects();
-
-    var history = _createRouterObjects.history;
-    var transitionManager = _createRouterObjects.transitionManager;
-    var router = _createRouterObjects.router;
-
-    this._unlisten = transitionManager.listen(function (error, state) {
-      if (error) {
-        _this.handleError(error);
-      } else {
-        _this.setState(state, _this.props.onUpdate);
-      }
-    });
-
-    this.history = history;
-    this.router = router;
-  },
-
-  createRouterObjects: function createRouterObjects() {
-    var matchContext = this.props.matchContext;
-
-    if (matchContext) {
-      return matchContext;
-    }
-
-    var history = this.props.history;
-    var _props2 = this.props;
-    var routes = _props2.routes;
-    var children = _props2.children;
-
-    if (isDeprecatedHistory(history)) {
-      history = this.wrapDeprecatedHistory(history);
-    }
-
-    var transitionManager = _createTransitionManager2['default'](history, _RouteUtils.createRoutes(routes || children));
-    var router = _RouterUtils.createRouterObject(history, transitionManager);
-    var routingHistory = _RouterUtils.createRoutingHistory(history, transitionManager);
-
-    return { history: routingHistory, transitionManager: transitionManager, router: router };
-  },
-
-  wrapDeprecatedHistory: function wrapDeprecatedHistory(history) {
-    var _props3 = this.props;
-    var parseQueryString = _props3.parseQueryString;
-    var stringifyQuery = _props3.stringifyQuery;
-
-    var createHistory = undefined;
-    if (history) {
-      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'It appears you have provided a deprecated history object to `<Router/>`, please use a history provided by ' + 'React Router with `import { browserHistory } from \'react-router\'` or `import { hashHistory } from \'react-router\'`. ' + 'If you are using a custom history please create it with `useRouterHistory`, see http://tiny.cc/router-usinghistory for details.') : undefined;
-      createHistory = function () {
-        return history;
-      };
-    } else {
-      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`Router` no longer defaults the history prop to hash history. Please use the `hashHistory` singleton instead. http://tiny.cc/router-defaulthistory') : undefined;
-      createHistory = _historyLibCreateHashHistory2['default'];
-    }
-
-    return _historyLibUseQueries2['default'](createHistory)({ parseQueryString: parseQueryString, stringifyQuery: stringifyQuery });
-  },
-
-  /* istanbul ignore next: sanity check */
-  componentWillReceiveProps: function componentWillReceiveProps(nextProps) {
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](nextProps.history === this.props.history, 'You cannot change <Router history>; it will be ignored') : undefined;
-
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default']((nextProps.routes || nextProps.children) === (this.props.routes || this.props.children), 'You cannot change <Router routes>; it will be ignored') : undefined;
-  },
-
-  componentWillUnmount: function componentWillUnmount() {
-    if (this._unlisten) this._unlisten();
-  },
-
-  render: function render() {
-    var _state = this.state;
-    var location = _state.location;
-    var routes = _state.routes;
-    var params = _state.params;
-    var components = _state.components;
-    var _props4 = this.props;
-    var createElement = _props4.createElement;
-    var render = _props4.render;
-
-    var props = _objectWithoutProperties(_props4, ['createElement', 'render']);
-
-    if (location == null) return null; // Async match
-
-    // Only forward non-Router-specific props to routing context, as those are
-    // the only ones that might be custom routing context props.
-    Object.keys(Router.propTypes).forEach(function (propType) {
-      return delete props[propType];
-    });
-
-    return render(_extends({}, props, {
-      history: this.history,
-      router: this.router,
-      location: location,
-      routes: routes,
-      params: params,
-      components: components,
-      createElement: createElement
-    }));
-  }
-
-});
-
-exports['default'] = Router;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./PropTypes":17,"./RouteUtils":21,"./RouterContext":23,"./RouterUtils":24,"./createTransitionManager":31,"./routerWarning":40,"_process":3,"history/lib/createHashHistory":51,"history/lib/useQueries":58,"react":221}],23:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _deprecateObjectProperties = require('./deprecateObjectProperties');
-
-var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
-
-var _getRouteParams = require('./getRouteParams');
-
-var _getRouteParams2 = _interopRequireDefault(_getRouteParams);
-
-var _RouteUtils = require('./RouteUtils');
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _React$PropTypes = _react2['default'].PropTypes;
-var array = _React$PropTypes.array;
-var func = _React$PropTypes.func;
-var object = _React$PropTypes.object;
-
-/**
- * A <RouterContext> renders the component tree for a given router state
- * and sets the history object and the current location in context.
- */
-var RouterContext = _react2['default'].createClass({
-  displayName: 'RouterContext',
-
-  propTypes: {
-    history: object,
-    router: object.isRequired,
-    location: object.isRequired,
-    routes: array.isRequired,
-    params: object.isRequired,
-    components: array.isRequired,
-    createElement: func.isRequired
-  },
-
-  getDefaultProps: function getDefaultProps() {
-    return {
-      createElement: _react2['default'].createElement
-    };
-  },
-
-  childContextTypes: {
-    history: object,
-    location: object.isRequired,
-    router: object.isRequired
-  },
-
-  getChildContext: function getChildContext() {
-    var _props = this.props;
-    var router = _props.router;
-    var history = _props.history;
-    var location = _props.location;
-
-    if (!router) {
-      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`<RouterContext>` expects a `router` rather than a `history`') : undefined;
-
-      router = _extends({}, history, {
-        setRouteLeaveHook: history.listenBeforeLeavingRoute
-      });
-      delete router.listenBeforeLeavingRoute;
-    }
-
-    if (process.env.NODE_ENV !== 'production') {
-      location = _deprecateObjectProperties2['default'](location, '`context.location` is deprecated, please use a route component\'s `props.location` instead. http://tiny.cc/router-accessinglocation');
-    }
-
-    return { history: history, location: location, router: router };
-  },
-
-  createElement: function createElement(component, props) {
-    return component == null ? null : this.props.createElement(component, props);
-  },
-
-  render: function render() {
-    var _this = this;
-
-    var _props2 = this.props;
-    var history = _props2.history;
-    var location = _props2.location;
-    var routes = _props2.routes;
-    var params = _props2.params;
-    var components = _props2.components;
-
-    var element = null;
-
-    if (components) {
-      element = components.reduceRight(function (element, components, index) {
-        if (components == null) return element; // Don't create new children; use the grandchildren.
-
-        var route = routes[index];
-        var routeParams = _getRouteParams2['default'](route, params);
-        var props = {
-          history: history,
-          location: location,
-          params: params,
-          route: route,
-          routeParams: routeParams,
-          routes: routes
-        };
-
-        if (_RouteUtils.isReactChildren(element)) {
-          props.children = element;
-        } else if (element) {
-          for (var prop in element) {
-            if (element.hasOwnProperty(prop)) props[prop] = element[prop];
-          }
-        }
-
-        if (typeof components === 'object') {
-          var elements = {};
-
-          for (var key in components) {
-            if (components.hasOwnProperty(key)) {
-              // Pass through the key as a prop to createElement to allow
-              // custom createElement functions to know which named component
-              // they're rendering, for e.g. matching up to fetched data.
-              elements[key] = _this.createElement(components[key], _extends({
-                key: key }, props));
-            }
-          }
-
-          return elements;
-        }
-
-        return _this.createElement(components, props);
-      }, element);
-    }
-
-    !(element === null || element === false || _react2['default'].isValidElement(element)) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'The root route must render a single element') : _invariant2['default'](false) : undefined;
-
-    return element;
-  }
-
-});
-
-exports['default'] = RouterContext;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./RouteUtils":21,"./deprecateObjectProperties":32,"./getRouteParams":34,"./routerWarning":40,"_process":3,"invariant":64,"react":221}],24:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-exports.createRouterObject = createRouterObject;
-exports.createRoutingHistory = createRoutingHistory;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _deprecateObjectProperties = require('./deprecateObjectProperties');
-
-var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
-
-function createRouterObject(history, transitionManager) {
-  return _extends({}, history, {
-    setRouteLeaveHook: transitionManager.listenBeforeLeavingRoute,
-    isActive: transitionManager.isActive
-  });
-}
-
-// deprecated
-
-function createRoutingHistory(history, transitionManager) {
-  history = _extends({}, history, transitionManager);
-
-  if (process.env.NODE_ENV !== 'production') {
-    history = _deprecateObjectProperties2['default'](history, '`props.history` and `context.history` are deprecated. Please use `context.router`. http://tiny.cc/router-contextchanges');
-  }
-
-  return history;
-}
-}).call(this,require('_process'))
-
-},{"./deprecateObjectProperties":32,"_process":3}],25:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _RouterContext = require('./RouterContext');
-
-var _RouterContext2 = _interopRequireDefault(_RouterContext);
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var RoutingContext = _react2['default'].createClass({
-  displayName: 'RoutingContext',
-
-  componentWillMount: function componentWillMount() {
-    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`RoutingContext` has been renamed to `RouterContext`. Please use `import { RouterContext } from \'react-router\'`. http://tiny.cc/router-routercontext') : undefined;
-  },
-
-  render: function render() {
-    return _react2['default'].createElement(_RouterContext2['default'], this.props);
-  }
-});
-
-exports['default'] = RoutingContext;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./RouterContext":23,"./routerWarning":40,"_process":3,"react":221}],26:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-exports.runEnterHooks = runEnterHooks;
-exports.runLeaveHooks = runLeaveHooks;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _AsyncUtils = require('./AsyncUtils');
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-function createEnterHook(hook, route) {
-  return function (a, b, callback) {
-    hook.apply(route, arguments);
-
-    if (hook.length < 3) {
-      // Assume hook executes synchronously and
-      // automatically call the callback.
-      callback();
-    }
-  };
-}
-
-function getEnterHooks(routes) {
-  return routes.reduce(function (hooks, route) {
-    if (route.onEnter) hooks.push(createEnterHook(route.onEnter, route));
-
-    return hooks;
-  }, []);
-}
-
-/**
- * Runs all onEnter hooks in the given array of routes in order
- * with onEnter(nextState, replace, callback) and calls
- * callback(error, redirectInfo) when finished. The first hook
- * to use replace short-circuits the loop.
- *
- * If a hook needs to run asynchronously, it may use the callback
- * function. However, doing so will cause the transition to pause,
- * which could lead to a non-responsive UI if the hook is slow.
- */
-
-function runEnterHooks(routes, nextState, callback) {
-  var hooks = getEnterHooks(routes);
-
-  if (!hooks.length) {
-    callback();
-    return;
-  }
-
-  var redirectInfo = undefined;
-  function replace(location, deprecatedPathname, deprecatedQuery) {
-    if (deprecatedPathname) {
-      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`replaceState(state, pathname, query) is deprecated; use `replace(location)` with a location descriptor instead. http://tiny.cc/router-isActivedeprecated') : undefined;
-      redirectInfo = {
-        pathname: deprecatedPathname,
-        query: deprecatedQuery,
-        state: location
-      };
-
-      return;
-    }
-
-    redirectInfo = location;
-  }
-
-  _AsyncUtils.loopAsync(hooks.length, function (index, next, done) {
-    hooks[index](nextState, replace, function (error) {
-      if (error || redirectInfo) {
-        done(error, redirectInfo); // No need to continue.
-      } else {
-          next();
-        }
-    });
-  }, callback);
-}
-
-/**
- * Runs all onLeave hooks in the given array of routes in order.
- */
-
-function runLeaveHooks(routes) {
-  for (var i = 0, len = routes.length; i < len; ++i) {
-    if (routes[i].onLeave) routes[i].onLeave.call(routes[i]);
-  }
-}
-}).call(this,require('_process'))
-
-},{"./AsyncUtils":9,"./routerWarning":40,"_process":3}],27:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _historyLibCreateBrowserHistory = require('history/lib/createBrowserHistory');
-
-var _historyLibCreateBrowserHistory2 = _interopRequireDefault(_historyLibCreateBrowserHistory);
-
-var _createRouterHistory = require('./createRouterHistory');
-
-var _createRouterHistory2 = _interopRequireDefault(_createRouterHistory);
-
-exports['default'] = _createRouterHistory2['default'](_historyLibCreateBrowserHistory2['default']);
-module.exports = exports['default'];
-},{"./createRouterHistory":30,"history/lib/createBrowserHistory":49}],28:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-var _PatternUtils = require('./PatternUtils');
-
-function routeParamsChanged(route, prevState, nextState) {
-  if (!route.path) return false;
-
-  var paramNames = _PatternUtils.getParamNames(route.path);
-
-  return paramNames.some(function (paramName) {
-    return prevState.params[paramName] !== nextState.params[paramName];
-  });
-}
-
-/**
- * Returns an object of { leaveRoutes, enterRoutes } determined by
- * the change from prevState to nextState. We leave routes if either
- * 1) they are not in the next state or 2) they are in the next state
- * but their params have changed (i.e. /users/123 => /users/456).
- *
- * leaveRoutes are ordered starting at the leaf route of the tree
- * we're leaving up to the common parent route. enterRoutes are ordered
- * from the top of the tree we're entering down to the leaf route.
- */
-function computeChangedRoutes(prevState, nextState) {
-  var prevRoutes = prevState && prevState.routes;
-  var nextRoutes = nextState.routes;
-
-  var leaveRoutes = undefined,
-      enterRoutes = undefined;
-  if (prevRoutes) {
-    leaveRoutes = prevRoutes.filter(function (route) {
-      return nextRoutes.indexOf(route) === -1 || routeParamsChanged(route, prevState, nextState);
-    });
-
-    // onLeave hooks start at the leaf route.
-    leaveRoutes.reverse();
-
-    enterRoutes = nextRoutes.filter(function (route) {
-      return prevRoutes.indexOf(route) === -1 || leaveRoutes.indexOf(route) !== -1;
-    });
-  } else {
-    leaveRoutes = [];
-    enterRoutes = nextRoutes;
-  }
-
-  return {
-    leaveRoutes: leaveRoutes,
-    enterRoutes: enterRoutes
-  };
-}
-
-exports['default'] = computeChangedRoutes;
-module.exports = exports['default'];
-},{"./PatternUtils":16}],29:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-exports['default'] = createMemoryHistory;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _historyLibUseQueries = require('history/lib/useQueries');
-
-var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
-
-var _historyLibUseBasename = require('history/lib/useBasename');
-
-var _historyLibUseBasename2 = _interopRequireDefault(_historyLibUseBasename);
-
-var _historyLibCreateMemoryHistory = require('history/lib/createMemoryHistory');
-
-var _historyLibCreateMemoryHistory2 = _interopRequireDefault(_historyLibCreateMemoryHistory);
-
-function createMemoryHistory(options) {
-  // signatures and type checking differ between `useRoutes` and
-  // `createMemoryHistory`, have to create `memoryHistory` first because
-  // `useQueries` doesn't understand the signature
-  var memoryHistory = _historyLibCreateMemoryHistory2['default'](options);
-  var createHistory = function createHistory() {
-    return memoryHistory;
-  };
-  var history = _historyLibUseQueries2['default'](_historyLibUseBasename2['default'](createHistory))(options);
-  history.__v2_compatible__ = true;
-  return history;
-}
-
-module.exports = exports['default'];
-},{"history/lib/createMemoryHistory":54,"history/lib/useBasename":57,"history/lib/useQueries":58}],30:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _useRouterHistory = require('./useRouterHistory');
-
-var _useRouterHistory2 = _interopRequireDefault(_useRouterHistory);
-
-var canUseDOM = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
-
-exports['default'] = function (createHistory) {
-  var history = undefined;
-  if (canUseDOM) history = _useRouterHistory2['default'](createHistory)();
-  return history;
-};
-
-module.exports = exports['default'];
-},{"./useRouterHistory":41}],31:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-exports['default'] = createTransitionManager;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _historyLibActions = require('history/lib/Actions');
-
-var _computeChangedRoutes2 = require('./computeChangedRoutes');
-
-var _computeChangedRoutes3 = _interopRequireDefault(_computeChangedRoutes2);
-
-var _TransitionUtils = require('./TransitionUtils');
-
-var _isActive2 = require('./isActive');
-
-var _isActive3 = _interopRequireDefault(_isActive2);
-
-var _getComponents = require('./getComponents');
-
-var _getComponents2 = _interopRequireDefault(_getComponents);
-
-var _matchRoutes = require('./matchRoutes');
-
-var _matchRoutes2 = _interopRequireDefault(_matchRoutes);
-
-function hasAnyProperties(object) {
-  for (var p in object) {
-    if (object.hasOwnProperty(p)) return true;
-  }return false;
-}
-
-function createTransitionManager(history, routes) {
-  var state = {};
-
-  // Signature should be (location, indexOnly), but needs to support (path,
-  // query, indexOnly)
-  function isActive(location) {
-    var indexOnlyOrDeprecatedQuery = arguments.length <= 1 || arguments[1] === undefined ? false : arguments[1];
-    var deprecatedIndexOnly = arguments.length <= 2 || arguments[2] === undefined ? null : arguments[2];
-
-    var indexOnly = undefined;
-    if (indexOnlyOrDeprecatedQuery && indexOnlyOrDeprecatedQuery !== true || deprecatedIndexOnly !== null) {
-      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`isActive(pathname, query, indexOnly) is deprecated; use `isActive(location, indexOnly)` with a location descriptor instead. http://tiny.cc/router-isActivedeprecated') : undefined;
-      location = { pathname: location, query: indexOnlyOrDeprecatedQuery };
-      indexOnly = deprecatedIndexOnly || false;
-    } else {
-      location = history.createLocation(location);
-      indexOnly = indexOnlyOrDeprecatedQuery;
-    }
-
-    return _isActive3['default'](location, indexOnly, state.location, state.routes, state.params);
-  }
-
-  function createLocationFromRedirectInfo(location) {
-    return history.createLocation(location, _historyLibActions.REPLACE);
-  }
-
-  var partialNextState = undefined;
-
-  function match(location, callback) {
-    if (partialNextState && partialNextState.location === location) {
-      // Continue from where we left off.
-      finishMatch(partialNextState, callback);
-    } else {
-      _matchRoutes2['default'](routes, location, function (error, nextState) {
-        if (error) {
-          callback(error);
-        } else if (nextState) {
-          finishMatch(_extends({}, nextState, { location: location }), callback);
-        } else {
-          callback();
-        }
-      });
-    }
-  }
-
-  function finishMatch(nextState, callback) {
-    var _computeChangedRoutes = _computeChangedRoutes3['default'](state, nextState);
-
-    var leaveRoutes = _computeChangedRoutes.leaveRoutes;
-    var enterRoutes = _computeChangedRoutes.enterRoutes;
-
-    _TransitionUtils.runLeaveHooks(leaveRoutes);
-
-    // Tear down confirmation hooks for left routes
-    leaveRoutes.forEach(removeListenBeforeHooksForRoute);
-
-    _TransitionUtils.runEnterHooks(enterRoutes, nextState, function (error, redirectInfo) {
-      if (error) {
-        callback(error);
-      } else if (redirectInfo) {
-        callback(null, createLocationFromRedirectInfo(redirectInfo));
-      } else {
-        // TODO: Fetch components after state is updated.
-        _getComponents2['default'](nextState, function (error, components) {
-          if (error) {
-            callback(error);
-          } else {
-            // TODO: Make match a pure function and have some other API
-            // for "match and update state".
-            callback(null, null, state = _extends({}, nextState, { components: components }));
-          }
-        });
-      }
-    });
-  }
-
-  var RouteGuid = 1;
-
-  function getRouteID(route) {
-    var create = arguments.length <= 1 || arguments[1] === undefined ? true : arguments[1];
-
-    return route.__id__ || create && (route.__id__ = RouteGuid++);
-  }
-
-  var RouteHooks = {};
-
-  function getRouteHooksForRoutes(routes) {
-    return routes.reduce(function (hooks, route) {
-      hooks.push.apply(hooks, RouteHooks[getRouteID(route)]);
-      return hooks;
-    }, []);
-  }
-
-  function transitionHook(location, callback) {
-    _matchRoutes2['default'](routes, location, function (error, nextState) {
-      if (nextState == null) {
-        // TODO: We didn't actually match anything, but hang
-        // onto error/nextState so we don't have to matchRoutes
-        // again in the listen callback.
-        callback();
-        return;
-      }
-
-      // Cache some state here so we don't have to
-      // matchRoutes() again in the listen callback.
-      partialNextState = _extends({}, nextState, { location: location });
-
-      var hooks = getRouteHooksForRoutes(_computeChangedRoutes3['default'](state, partialNextState).leaveRoutes);
-
-      var result = undefined;
-      for (var i = 0, len = hooks.length; result == null && i < len; ++i) {
-        // Passing the location arg here indicates to
-        // the user that this is a transition hook.
-        result = hooks[i](location);
-      }
-
-      callback(result);
-    });
-  }
-
-  /* istanbul ignore next: untestable with Karma */
-  function beforeUnloadHook() {
-    // Synchronously check to see if any route hooks want
-    // to prevent the current window/tab from closing.
-    if (state.routes) {
-      var hooks = getRouteHooksForRoutes(state.routes);
-
-      var message = undefined;
-      for (var i = 0, len = hooks.length; typeof message !== 'string' && i < len; ++i) {
-        // Passing no args indicates to the user that this is a
-        // beforeunload hook. We don't know the next location.
-        message = hooks[i]();
-      }
-
-      return message;
-    }
-  }
-
-  var unlistenBefore = undefined,
-      unlistenBeforeUnload = undefined;
-
-  function removeListenBeforeHooksForRoute(route) {
-    var routeID = getRouteID(route, false);
-    if (!routeID) {
-      return;
-    }
-
-    delete RouteHooks[routeID];
-
-    if (!hasAnyProperties(RouteHooks)) {
-      // teardown transition & beforeunload hooks
-      if (unlistenBefore) {
-        unlistenBefore();
-        unlistenBefore = null;
-      }
-
-      if (unlistenBeforeUnload) {
-        unlistenBeforeUnload();
-        unlistenBeforeUnload = null;
-      }
-    }
-  }
-
-  /**
-   * Registers the given hook function to run before leaving the given route.
-   *
-   * During a normal transition, the hook function receives the next location
-   * as its only argument and must return either a) a prompt message to show
-   * the user, to make sure they want to leave the page or b) false, to prevent
-   * the transition.
-   *
-   * During the beforeunload event (in browsers) the hook receives no arguments.
-   * In this case it must return a prompt message to prevent the transition.
-   *
-   * Returns a function that may be used to unbind the listener.
-   */
-  function listenBeforeLeavingRoute(route, hook) {
-    // TODO: Warn if they register for a route that isn't currently
-    // active. They're probably doing something wrong, like re-creating
-    // route objects on every location change.
-    var routeID = getRouteID(route);
-    var hooks = RouteHooks[routeID];
-
-    if (!hooks) {
-      var thereWereNoRouteHooks = !hasAnyProperties(RouteHooks);
-
-      RouteHooks[routeID] = [hook];
-
-      if (thereWereNoRouteHooks) {
-        // setup transition & beforeunload hooks
-        unlistenBefore = history.listenBefore(transitionHook);
-
-        if (history.listenBeforeUnload) unlistenBeforeUnload = history.listenBeforeUnload(beforeUnloadHook);
-      }
-    } else {
-      if (hooks.indexOf(hook) === -1) {
-        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'adding multiple leave hooks for the same route is deprecated; manage multiple confirmations in your own code instead') : undefined;
-
-        hooks.push(hook);
-      }
-    }
-
-    return function () {
-      var hooks = RouteHooks[routeID];
-
-      if (hooks) {
-        var newHooks = hooks.filter(function (item) {
-          return item !== hook;
-        });
-
-        if (newHooks.length === 0) {
-          removeListenBeforeHooksForRoute(route);
-        } else {
-          RouteHooks[routeID] = newHooks;
-        }
-      }
-    };
-  }
-
-  /**
-   * This is the API for stateful environments. As the location
-   * changes, we update state and call the listener. We can also
-   * gracefully handle errors and redirects.
-   */
-  function listen(listener) {
-    // TODO: Only use a single history listener. Otherwise we'll
-    // end up with multiple concurrent calls to match.
-    return history.listen(function (location) {
-      if (state.location === location) {
-        listener(null, state);
-      } else {
-        match(location, function (error, redirectLocation, nextState) {
-          if (error) {
-            listener(error);
-          } else if (redirectLocation) {
-            history.transitionTo(redirectLocation);
-          } else if (nextState) {
-            listener(null, nextState);
-          } else {
-            process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'Location "%s" did not match any routes', location.pathname + location.search + location.hash) : undefined;
-          }
-        });
-      }
-    });
-  }
-
-  return {
-    isActive: isActive,
-    match: match,
-    listenBeforeLeavingRoute: listenBeforeLeavingRoute,
-    listen: listen
-  };
-}
-
-//export default useRoutes
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./TransitionUtils":26,"./computeChangedRoutes":28,"./getComponents":33,"./isActive":37,"./matchRoutes":39,"./routerWarning":40,"_process":3,"history/lib/Actions":43}],32:[function(require,module,exports){
-(function (process){
-/*eslint no-empty: 0*/
-'use strict';
-
-exports.__esModule = true;
-exports['default'] = deprecateObjectProperties;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var useMembrane = false;
-
-if (process.env.NODE_ENV !== 'production') {
-  try {
-    if (Object.defineProperty({}, 'x', { get: function get() {
-        return true;
-      } }).x) {
-      useMembrane = true;
-    }
-  } catch (e) {}
-}
-
-// wraps an object in a membrane to warn about deprecated property access
-
-function deprecateObjectProperties(object, message) {
-  if (!useMembrane) return object;
-
-  var membrane = {};
-
-  var _loop = function (prop) {
-    if (typeof object[prop] === 'function') {
-      membrane[prop] = function () {
-        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, message) : undefined;
-        return object[prop].apply(object, arguments);
-      };
-    } else {
-      Object.defineProperty(membrane, prop, {
-        configurable: false,
-        enumerable: false,
-        get: function get() {
-          process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, message) : undefined;
-          return object[prop];
-        }
-      });
-    }
-  };
-
-  for (var prop in object) {
-    _loop(prop);
-  }
-
-  return membrane;
-}
-
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./routerWarning":40,"_process":3}],33:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-var _AsyncUtils = require('./AsyncUtils');
-
-function getComponentsForRoute(location, route, callback) {
-  if (route.component || route.components) {
-    callback(null, route.component || route.components);
-  } else if (route.getComponent) {
-    route.getComponent(location, callback);
-  } else if (route.getComponents) {
-    route.getComponents(location, callback);
-  } else {
-    callback();
-  }
-}
-
-/**
- * Asynchronously fetches all components needed for the given router
- * state and calls callback(error, components) when finished.
- *
- * Note: This operation may finish synchronously if no routes have an
- * asynchronous getComponents method.
- */
-function getComponents(nextState, callback) {
-  _AsyncUtils.mapAsync(nextState.routes, function (route, index, callback) {
-    getComponentsForRoute(nextState.location, route, callback);
-  }, callback);
-}
-
-exports['default'] = getComponents;
-module.exports = exports['default'];
-},{"./AsyncUtils":9}],34:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-var _PatternUtils = require('./PatternUtils');
-
-/**
- * Extracts an object of params the given route cares about from
- * the given params object.
- */
-function getRouteParams(route, params) {
-  var routeParams = {};
-
-  if (!route.path) return routeParams;
-
-  var paramNames = _PatternUtils.getParamNames(route.path);
-
-  for (var p in params) {
-    if (params.hasOwnProperty(p) && paramNames.indexOf(p) !== -1) routeParams[p] = params[p];
-  }return routeParams;
-}
-
-exports['default'] = getRouteParams;
-module.exports = exports['default'];
-},{"./PatternUtils":16}],35:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _historyLibCreateHashHistory = require('history/lib/createHashHistory');
-
-var _historyLibCreateHashHistory2 = _interopRequireDefault(_historyLibCreateHashHistory);
-
-var _createRouterHistory = require('./createRouterHistory');
-
-var _createRouterHistory2 = _interopRequireDefault(_createRouterHistory);
-
-exports['default'] = _createRouterHistory2['default'](_historyLibCreateHashHistory2['default']);
-module.exports = exports['default'];
-},{"./createRouterHistory":30,"history/lib/createHashHistory":51}],36:[function(require,module,exports){
-/* components */
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _Router2 = require('./Router');
-
-var _Router3 = _interopRequireDefault(_Router2);
-
-exports.Router = _Router3['default'];
-
-var _Link2 = require('./Link');
-
-var _Link3 = _interopRequireDefault(_Link2);
-
-exports.Link = _Link3['default'];
-
-var _IndexLink2 = require('./IndexLink');
-
-var _IndexLink3 = _interopRequireDefault(_IndexLink2);
-
-exports.IndexLink = _IndexLink3['default'];
-
-/* components (configuration) */
-
-var _IndexRedirect2 = require('./IndexRedirect');
-
-var _IndexRedirect3 = _interopRequireDefault(_IndexRedirect2);
-
-exports.IndexRedirect = _IndexRedirect3['default'];
-
-var _IndexRoute2 = require('./IndexRoute');
-
-var _IndexRoute3 = _interopRequireDefault(_IndexRoute2);
-
-exports.IndexRoute = _IndexRoute3['default'];
-
-var _Redirect2 = require('./Redirect');
-
-var _Redirect3 = _interopRequireDefault(_Redirect2);
-
-exports.Redirect = _Redirect3['default'];
-
-var _Route2 = require('./Route');
-
-var _Route3 = _interopRequireDefault(_Route2);
-
-exports.Route = _Route3['default'];
-
-/* mixins */
-
-var _History2 = require('./History');
-
-var _History3 = _interopRequireDefault(_History2);
-
-exports.History = _History3['default'];
-
-var _Lifecycle2 = require('./Lifecycle');
-
-var _Lifecycle3 = _interopRequireDefault(_Lifecycle2);
-
-exports.Lifecycle = _Lifecycle3['default'];
-
-var _RouteContext2 = require('./RouteContext');
-
-var _RouteContext3 = _interopRequireDefault(_RouteContext2);
-
-exports.RouteContext = _RouteContext3['default'];
-
-/* utils */
-
-var _useRoutes2 = require('./useRoutes');
-
-var _useRoutes3 = _interopRequireDefault(_useRoutes2);
-
-exports.useRoutes = _useRoutes3['default'];
-
-var _RouteUtils = require('./RouteUtils');
-
-exports.createRoutes = _RouteUtils.createRoutes;
-
-var _RouterContext2 = require('./RouterContext');
-
-var _RouterContext3 = _interopRequireDefault(_RouterContext2);
-
-exports.RouterContext = _RouterContext3['default'];
-
-var _RoutingContext2 = require('./RoutingContext');
-
-var _RoutingContext3 = _interopRequireDefault(_RoutingContext2);
-
-exports.RoutingContext = _RoutingContext3['default'];
-
-var _PropTypes2 = require('./PropTypes');
-
-var _PropTypes3 = _interopRequireDefault(_PropTypes2);
-
-exports.PropTypes = _PropTypes3['default'];
-
-var _match2 = require('./match');
-
-var _match3 = _interopRequireDefault(_match2);
-
-exports.match = _match3['default'];
-
-var _useRouterHistory2 = require('./useRouterHistory');
-
-var _useRouterHistory3 = _interopRequireDefault(_useRouterHistory2);
-
-exports.useRouterHistory = _useRouterHistory3['default'];
-
-var _PatternUtils = require('./PatternUtils');
-
-exports.formatPattern = _PatternUtils.formatPattern;
-
-/* histories */
-
-var _browserHistory2 = require('./browserHistory');
-
-var _browserHistory3 = _interopRequireDefault(_browserHistory2);
-
-exports.browserHistory = _browserHistory3['default'];
-
-var _hashHistory2 = require('./hashHistory');
-
-var _hashHistory3 = _interopRequireDefault(_hashHistory2);
-
-exports.hashHistory = _hashHistory3['default'];
-
-var _createMemoryHistory2 = require('./createMemoryHistory');
-
-var _createMemoryHistory3 = _interopRequireDefault(_createMemoryHistory2);
-
-exports.createMemoryHistory = _createMemoryHistory3['default'];
-},{"./History":10,"./IndexLink":11,"./IndexRedirect":12,"./IndexRoute":13,"./Lifecycle":14,"./Link":15,"./PatternUtils":16,"./PropTypes":17,"./Redirect":18,"./Route":19,"./RouteContext":20,"./RouteUtils":21,"./Router":22,"./RouterContext":23,"./RoutingContext":25,"./browserHistory":27,"./createMemoryHistory":29,"./hashHistory":35,"./match":38,"./useRouterHistory":41,"./useRoutes":42}],37:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-exports['default'] = isActive;
-
-var _PatternUtils = require('./PatternUtils');
-
-function deepEqual(a, b) {
-  if (a == b) return true;
-
-  if (a == null || b == null) return false;
-
-  if (Array.isArray(a)) {
-    return Array.isArray(b) && a.length === b.length && a.every(function (item, index) {
-      return deepEqual(item, b[index]);
-    });
-  }
-
-  if (typeof a === 'object') {
-    for (var p in a) {
-      if (!a.hasOwnProperty(p)) {
-        continue;
-      }
-
-      if (a[p] === undefined) {
-        if (b[p] !== undefined) {
-          return false;
-        }
-      } else if (!b.hasOwnProperty(p)) {
-        return false;
-      } else if (!deepEqual(a[p], b[p])) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  return String(a) === String(b);
-}
-
-function paramsAreActive(paramNames, paramValues, activeParams) {
-  // FIXME: This doesn't work on repeated params in activeParams.
-  return paramNames.every(function (paramName, index) {
-    return String(paramValues[index]) === String(activeParams[paramName]);
-  });
-}
-
-function getMatchingRouteIndex(pathname, activeRoutes, activeParams) {
-  var remainingPathname = pathname,
-      paramNames = [],
-      paramValues = [];
-
-  for (var i = 0, len = activeRoutes.length; i < len; ++i) {
-    var route = activeRoutes[i];
-    var pattern = route.path || '';
-
-    if (pattern.charAt(0) === '/') {
-      remainingPathname = pathname;
-      paramNames = [];
-      paramValues = [];
-    }
-
-    if (remainingPathname !== null) {
-      var matched = _PatternUtils.matchPattern(pattern, remainingPathname);
-      remainingPathname = matched.remainingPathname;
-      paramNames = [].concat(paramNames, matched.paramNames);
-      paramValues = [].concat(paramValues, matched.paramValues);
-    }
-
-    if (remainingPathname === '' && route.path && paramsAreActive(paramNames, paramValues, activeParams)) return i;
-  }
-
-  return null;
-}
-
-/**
- * Returns true if the given pathname matches the active routes
- * and params.
- */
-function routeIsActive(pathname, routes, params, indexOnly) {
-  var i = getMatchingRouteIndex(pathname, routes, params);
-
-  if (i === null) {
-    // No match.
-    return false;
-  } else if (!indexOnly) {
-    // Any match is good enough.
-    return true;
-  }
-
-  // If any remaining routes past the match index have paths, then we can't
-  // be on the index route.
-  return routes.slice(i + 1).every(function (route) {
-    return !route.path;
-  });
-}
-
-/**
- * Returns true if all key/value pairs in the given query are
- * currently active.
- */
-function queryIsActive(query, activeQuery) {
-  if (activeQuery == null) return query == null;
-
-  if (query == null) return true;
-
-  return deepEqual(query, activeQuery);
-}
-
-/**
- * Returns true if a <Link> to the given pathname/query combination is
- * currently active.
- */
-
-function isActive(_ref, indexOnly, currentLocation, routes, params) {
-  var pathname = _ref.pathname;
-  var query = _ref.query;
-
-  if (currentLocation == null) return false;
-
-  if (!routeIsActive(pathname, routes, params, indexOnly)) return false;
-
-  return queryIsActive(query, currentLocation.query);
-}
-
-module.exports = exports['default'];
-},{"./PatternUtils":16}],38:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
-
-var _invariant = require('invariant');
-
-var _invariant2 = _interopRequireDefault(_invariant);
-
-var _createMemoryHistory = require('./createMemoryHistory');
-
-var _createMemoryHistory2 = _interopRequireDefault(_createMemoryHistory);
-
-var _createTransitionManager = require('./createTransitionManager');
-
-var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
-
-var _RouteUtils = require('./RouteUtils');
-
-var _RouterUtils = require('./RouterUtils');
-
-/**
- * A high-level API to be used for server-side rendering.
- *
- * This function matches a location to a set of routes and calls
- * callback(error, redirectLocation, renderProps) when finished.
- *
- * Note: You probably don't want to use this in a browser unless you're using
- * server-side rendering with async routes.
- */
-function match(_ref, callback) {
-  var history = _ref.history;
-  var routes = _ref.routes;
-  var location = _ref.location;
-
-  var options = _objectWithoutProperties(_ref, ['history', 'routes', 'location']);
-
-  !(history || location) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'match needs a history or a location') : _invariant2['default'](false) : undefined;
-
-  history = history ? history : _createMemoryHistory2['default'](options);
-  var transitionManager = _createTransitionManager2['default'](history, _RouteUtils.createRoutes(routes));
-
-  var unlisten = undefined;
-
-  if (location) {
-    // Allow match({ location: '/the/path', ... })
-    location = history.createLocation(location);
-  } else {
-    // Pick up the location from the history via synchronous history.listen
-    // call if needed.
-    unlisten = history.listen(function (historyLocation) {
-      location = historyLocation;
-    });
-  }
-
-  var router = _RouterUtils.createRouterObject(history, transitionManager);
-  history = _RouterUtils.createRoutingHistory(history, transitionManager);
-
-  transitionManager.match(location, function (error, redirectLocation, nextState) {
-    callback(error, redirectLocation, nextState && _extends({}, nextState, {
-      history: history,
-      router: router,
-      matchContext: { history: history, transitionManager: transitionManager, router: router }
-    }));
-
-    // Defer removing the listener to here to prevent DOM histories from having
-    // to unwind DOM event listeners unnecessarily, in case callback renders a
-    // <Router> and attaches another history listener.
-    if (unlisten) {
-      unlisten();
-    }
-  });
-}
-
-exports['default'] = match;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./RouteUtils":21,"./RouterUtils":24,"./createMemoryHistory":29,"./createTransitionManager":31,"_process":3,"invariant":64}],39:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-var _AsyncUtils = require('./AsyncUtils');
-
-var _PatternUtils = require('./PatternUtils');
-
-var _RouteUtils = require('./RouteUtils');
-
-function getChildRoutes(route, location, callback) {
-  if (route.childRoutes) {
-    return [null, route.childRoutes];
-  }
-  if (!route.getChildRoutes) {
-    return [];
-  }
-
-  var sync = true,
-      result = undefined;
-
-  route.getChildRoutes(location, function (error, childRoutes) {
-    childRoutes = !error && _RouteUtils.createRoutes(childRoutes);
-    if (sync) {
-      result = [error, childRoutes];
-      return;
-    }
-
-    callback(error, childRoutes);
-  });
-
-  sync = false;
-  return result; // Might be undefined.
-}
-
-function getIndexRoute(route, location, callback) {
-  if (route.indexRoute) {
-    callback(null, route.indexRoute);
-  } else if (route.getIndexRoute) {
-    route.getIndexRoute(location, function (error, indexRoute) {
-      callback(error, !error && _RouteUtils.createRoutes(indexRoute)[0]);
-    });
-  } else if (route.childRoutes) {
-    (function () {
-      var pathless = route.childRoutes.filter(function (obj) {
-        return !obj.hasOwnProperty('path');
-      });
-
-      _AsyncUtils.loopAsync(pathless.length, function (index, next, done) {
-        getIndexRoute(pathless[index], location, function (error, indexRoute) {
-          if (error || indexRoute) {
-            var routes = [pathless[index]].concat(Array.isArray(indexRoute) ? indexRoute : [indexRoute]);
-            done(error, routes);
-          } else {
-            next();
-          }
-        });
-      }, function (err, routes) {
-        callback(null, routes);
-      });
-    })();
-  } else {
-    callback();
-  }
-}
-
-function assignParams(params, paramNames, paramValues) {
-  return paramNames.reduce(function (params, paramName, index) {
-    var paramValue = paramValues && paramValues[index];
-
-    if (Array.isArray(params[paramName])) {
-      params[paramName].push(paramValue);
-    } else if (paramName in params) {
-      params[paramName] = [params[paramName], paramValue];
-    } else {
-      params[paramName] = paramValue;
-    }
-
-    return params;
-  }, params);
-}
-
-function createParams(paramNames, paramValues) {
-  return assignParams({}, paramNames, paramValues);
-}
-
-function matchRouteDeep(route, location, remainingPathname, paramNames, paramValues, callback) {
-  var pattern = route.path || '';
-
-  if (pattern.charAt(0) === '/') {
-    remainingPathname = location.pathname;
-    paramNames = [];
-    paramValues = [];
-  }
-
-  if (remainingPathname !== null) {
-    var matched = _PatternUtils.matchPattern(pattern, remainingPathname);
-    remainingPathname = matched.remainingPathname;
-    paramNames = [].concat(paramNames, matched.paramNames);
-    paramValues = [].concat(paramValues, matched.paramValues);
-
-    if (remainingPathname === '' && route.path) {
-      var _ret2 = (function () {
-        var match = {
-          routes: [route],
-          params: createParams(paramNames, paramValues)
-        };
-
-        getIndexRoute(route, location, function (error, indexRoute) {
-          if (error) {
-            callback(error);
-          } else {
-            if (Array.isArray(indexRoute)) {
-              var _match$routes;
-
-              process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](indexRoute.every(function (route) {
-                return !route.path;
-              }), 'Index routes should not have paths') : undefined;
-              (_match$routes = match.routes).push.apply(_match$routes, indexRoute);
-            } else if (indexRoute) {
-              process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](!indexRoute.path, 'Index routes should not have paths') : undefined;
-              match.routes.push(indexRoute);
-            }
-
-            callback(null, match);
-          }
-        });
-        return {
-          v: undefined
-        };
-      })();
-
-      if (typeof _ret2 === 'object') return _ret2.v;
-    }
-  }
-
-  if (remainingPathname != null || route.childRoutes) {
-    // Either a) this route matched at least some of the path or b)
-    // we don't have to load this route's children asynchronously. In
-    // either case continue checking for matches in the subtree.
-    var onChildRoutes = function onChildRoutes(error, childRoutes) {
-      if (error) {
-        callback(error);
-      } else if (childRoutes) {
-        // Check the child routes to see if any of them match.
-        matchRoutes(childRoutes, location, function (error, match) {
-          if (error) {
-            callback(error);
-          } else if (match) {
-            // A child route matched! Augment the match and pass it up the stack.
-            match.routes.unshift(route);
-            callback(null, match);
-          } else {
-            callback();
-          }
-        }, remainingPathname, paramNames, paramValues);
-      } else {
-        callback();
-      }
-    };
-
-    var result = getChildRoutes(route, location, onChildRoutes);
-    if (result) {
-      onChildRoutes.apply(undefined, result);
-    }
-  } else {
-    callback();
-  }
-}
-
-/**
- * Asynchronously matches the given location to a set of routes and calls
- * callback(error, state) when finished. The state object will have the
- * following properties:
- *
- * - routes       An array of routes that matched, in hierarchical order
- * - params       An object of URL parameters
- *
- * Note: This operation may finish synchronously if no routes have an
- * asynchronous getChildRoutes method.
- */
-function matchRoutes(routes, location, callback) {
-  var remainingPathname = arguments.length <= 3 || arguments[3] === undefined ? location.pathname : arguments[3];
-  var paramNames = arguments.length <= 4 || arguments[4] === undefined ? [] : arguments[4];
-  var paramValues = arguments.length <= 5 || arguments[5] === undefined ? [] : arguments[5];
-  return (function () {
-    _AsyncUtils.loopAsync(routes.length, function (index, next, done) {
-      matchRouteDeep(routes[index], location, remainingPathname, paramNames, paramValues, function (error, match) {
-        if (error || match) {
-          done(error, match);
-        } else {
-          next();
-        }
-      });
-    }, callback);
-  })();
-}
-
-exports['default'] = matchRoutes;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./AsyncUtils":9,"./PatternUtils":16,"./RouteUtils":21,"./routerWarning":40,"_process":3}],40:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-exports['default'] = routerWarning;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _warning = require('warning');
-
-var _warning2 = _interopRequireDefault(_warning);
-
-function routerWarning(falseToWarn, message) {
-  message = '[react-router] ' + message;
-
-  for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-    args[_key - 2] = arguments[_key];
-  }
-
-  process.env.NODE_ENV !== 'production' ? _warning2['default'].apply(undefined, [falseToWarn, message].concat(args)) : undefined;
-}
-
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"_process":3,"warning":65}],41:[function(require,module,exports){
-'use strict';
-
-exports.__esModule = true;
-exports['default'] = useRouterHistory;
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _historyLibUseQueries = require('history/lib/useQueries');
-
-var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
-
-var _historyLibUseBasename = require('history/lib/useBasename');
-
-var _historyLibUseBasename2 = _interopRequireDefault(_historyLibUseBasename);
-
-function useRouterHistory(createHistory) {
-  return function (options) {
-    var history = _historyLibUseQueries2['default'](_historyLibUseBasename2['default'](createHistory))(options);
-    history.__v2_compatible__ = true;
-    return history;
-  };
-}
-
-module.exports = exports['default'];
-},{"history/lib/useBasename":57,"history/lib/useQueries":58}],42:[function(require,module,exports){
-(function (process){
-'use strict';
-
-exports.__esModule = true;
-
-var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
-
-var _historyLibUseQueries = require('history/lib/useQueries');
-
-var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
-
-var _createTransitionManager = require('./createTransitionManager');
-
-var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
-
-var _routerWarning = require('./routerWarning');
-
-var _routerWarning2 = _interopRequireDefault(_routerWarning);
-
-/**
- * Returns a new createHistory function that may be used to create
- * history objects that know about routing.
- *
- * Enhances history objects with the following methods:
- *
- * - listen((error, nextState) => {})
- * - listenBeforeLeavingRoute(route, (nextLocation) => {})
- * - match(location, (error, redirectLocation, nextState) => {})
- * - isActive(pathname, query, indexOnly=false)
- */
-function useRoutes(createHistory) {
-  process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`useRoutes` is deprecated. Please use `createTransitionManager` instead.') : undefined;
-
-  return function () {
-    var _ref = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
-
-    var routes = _ref.routes;
-
-    var options = _objectWithoutProperties(_ref, ['routes']);
-
-    var history = _historyLibUseQueries2['default'](createHistory)(options);
-    var transitionManager = _createTransitionManager2['default'](history, routes);
-    return _extends({}, history, transitionManager);
-  };
-}
-
-exports['default'] = useRoutes;
-module.exports = exports['default'];
-}).call(this,require('_process'))
-
-},{"./createTransitionManager":31,"./routerWarning":40,"_process":3,"history/lib/useQueries":58}],43:[function(require,module,exports){
-/**
- * Indicates that navigation was caused by a call to history.push.
- */
-'use strict';
-
-exports.__esModule = true;
-var PUSH = 'PUSH';
-
-exports.PUSH = PUSH;
-/**
- * Indicates that navigation was caused by a call to history.replace.
- */
-var REPLACE = 'REPLACE';
-
-exports.REPLACE = REPLACE;
-/**
- * Indicates that navigation was caused by some other action such
- * as using a browser's back/forward buttons and/or manually manipulating
- * the URL in a browser's location bar. This is the default.
- *
- * See https://developer.mozilla.org/en-US/docs/Web/API/WindowEventHandlers/onpopstate
- * for more information.
- */
-var POP = 'POP';
-
-exports.POP = POP;
-exports['default'] = {
-  PUSH: PUSH,
-  REPLACE: REPLACE,
-  POP: POP
-};
-},{}],44:[function(require,module,exports){
-"use strict";
-
-exports.__esModule = true;
-exports.loopAsync = loopAsync;
-
-function loopAsync(turns, work, callback) {
-  var currentTurn = 0;
-  var isDone = false;
-
-  function done() {
-    isDone = true;
-    callback.apply(this, arguments);
-  }
-
-  function next() {
-    if (isDone) return;
-
-    if (currentTurn < turns) {
-      work.call(this, currentTurn++, next, done);
-    } else {
-      done.apply(this, arguments);
-    }
-  }
-
-  next();
-}
-},{}],45:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 (function (process){
 /*eslint-disable no-empty */
 'use strict';
@@ -3777,7 +7368,7 @@ function readState(key) {
 }
 }).call(this,require('_process'))
 
-},{"_process":3,"warning":65}],46:[function(require,module,exports){
+},{"_process":3,"warning":79}],60:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -3853,13 +7444,13 @@ function supportsGoWithoutReloadUsingHash() {
   var ua = navigator.userAgent;
   return ua.indexOf('Firefox') === -1;
 }
-},{}],47:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
 var canUseDOM = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
 exports.canUseDOM = canUseDOM;
-},{}],48:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3910,7 +7501,7 @@ function parsePath(path) {
 }
 }).call(this,require('_process'))
 
-},{"_process":3,"warning":65}],49:[function(require,module,exports){
+},{"_process":3,"warning":79}],63:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4090,7 +7681,7 @@ exports['default'] = createBrowserHistory;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./Actions":43,"./DOMStateStorage":45,"./DOMUtils":46,"./ExecutionEnvironment":47,"./PathUtils":48,"./createDOMHistory":50,"_process":3,"invariant":64}],50:[function(require,module,exports){
+},{"./Actions":57,"./DOMStateStorage":59,"./DOMUtils":60,"./ExecutionEnvironment":61,"./PathUtils":62,"./createDOMHistory":64,"_process":3,"invariant":76}],64:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4134,7 +7725,7 @@ exports['default'] = createDOMHistory;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./DOMUtils":46,"./ExecutionEnvironment":47,"./createHistory":52,"_process":3,"invariant":64}],51:[function(require,module,exports){
+},{"./DOMUtils":60,"./ExecutionEnvironment":61,"./createHistory":66,"_process":3,"invariant":76}],65:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4384,7 +7975,7 @@ exports['default'] = createHashHistory;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./Actions":43,"./DOMStateStorage":45,"./DOMUtils":46,"./ExecutionEnvironment":47,"./PathUtils":48,"./createDOMHistory":50,"_process":3,"invariant":64,"warning":65}],52:[function(require,module,exports){
+},{"./Actions":57,"./DOMStateStorage":59,"./DOMUtils":60,"./ExecutionEnvironment":61,"./PathUtils":62,"./createDOMHistory":64,"_process":3,"invariant":76,"warning":79}],66:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4438,8 +8029,8 @@ function createHistory() {
   var finishTransition = options.finishTransition;
   var saveState = options.saveState;
   var go = options.go;
-  var keyLength = options.keyLength;
   var getUserConfirmation = options.getUserConfirmation;
+  var keyLength = options.keyLength;
 
   if (typeof keyLength !== 'number') keyLength = DefaultKeyLength;
 
@@ -4676,7 +8267,7 @@ exports['default'] = createHistory;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./Actions":43,"./AsyncUtils":44,"./PathUtils":48,"./createLocation":53,"./deprecate":55,"./runTransitionHook":56,"_process":3,"deep-equal":59,"warning":65}],53:[function(require,module,exports){
+},{"./Actions":57,"./AsyncUtils":58,"./PathUtils":62,"./createLocation":67,"./deprecate":69,"./runTransitionHook":70,"_process":3,"deep-equal":73,"warning":79}],67:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4731,7 +8322,7 @@ exports['default'] = createLocation;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./Actions":43,"./PathUtils":48,"_process":3,"warning":65}],54:[function(require,module,exports){
+},{"./Actions":57,"./PathUtils":62,"_process":3,"warning":79}],68:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4820,19 +8411,20 @@ function createMemoryHistory() {
 
   function getCurrentLocation() {
     var entry = entries[current];
-    var key = entry.key;
     var basename = entry.basename;
     var pathname = entry.pathname;
     var search = entry.search;
 
     var path = (basename || '') + pathname + (search || '');
 
-    var state = undefined;
-    if (key) {
+    var key = undefined,
+        state = undefined;
+    if (entry.key) {
+      key = entry.key;
       state = readState(key);
     } else {
-      state = null;
       key = history.createKey();
+      state = null;
       entry.key = key;
     }
 
@@ -4888,7 +8480,7 @@ exports['default'] = createMemoryHistory;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./Actions":43,"./PathUtils":48,"./createHistory":52,"_process":3,"invariant":64,"warning":65}],55:[function(require,module,exports){
+},{"./Actions":57,"./PathUtils":62,"./createHistory":66,"_process":3,"invariant":76,"warning":79}],69:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4911,7 +8503,7 @@ exports['default'] = deprecate;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"_process":3,"warning":65}],56:[function(require,module,exports){
+},{"_process":3,"warning":79}],70:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -4939,7 +8531,7 @@ exports['default'] = runTransitionHook;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"_process":3,"warning":65}],57:[function(require,module,exports){
+},{"_process":3,"warning":79}],71:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -4947,8 +8539,6 @@ exports.__esModule = true;
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
 
 var _ExecutionEnvironment = require('./ExecutionEnvironment');
 
@@ -4965,11 +8555,10 @@ var _deprecate2 = _interopRequireDefault(_deprecate);
 function useBasename(createHistory) {
   return function () {
     var options = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+
+    var history = createHistory(options);
+
     var basename = options.basename;
-
-    var historyOptions = _objectWithoutProperties(options, ['basename']);
-
-    var history = createHistory(historyOptions);
 
     // Automatically use the value of <base href> in HTML
     // documents as basename if it's not explicitly given.
@@ -5078,7 +8667,7 @@ function useBasename(createHistory) {
 
 exports['default'] = useBasename;
 module.exports = exports['default'];
-},{"./ExecutionEnvironment":47,"./PathUtils":48,"./deprecate":55,"./runTransitionHook":56}],58:[function(require,module,exports){
+},{"./ExecutionEnvironment":61,"./PathUtils":62,"./deprecate":69,"./runTransitionHook":70}],72:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -5087,8 +8676,6 @@ exports.__esModule = true;
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
 
 var _warning = require('warning');
 
@@ -5127,12 +8714,11 @@ function isNestedObject(object) {
 function useQueries(createHistory) {
   return function () {
     var options = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+
+    var history = createHistory(options);
+
     var stringifyQuery = options.stringifyQuery;
     var parseQueryString = options.parseQueryString;
-
-    var historyOptions = _objectWithoutProperties(options, ['stringifyQuery', 'parseQueryString']);
-
-    var history = createHistory(historyOptions);
 
     if (typeof stringifyQuery !== 'function') stringifyQuery = defaultStringifyQuery;
 
@@ -5261,7 +8847,7 @@ exports['default'] = useQueries;
 module.exports = exports['default'];
 }).call(this,require('_process'))
 
-},{"./PathUtils":48,"./deprecate":55,"./runTransitionHook":56,"_process":3,"query-string":62,"warning":65}],59:[function(require,module,exports){
+},{"./PathUtils":62,"./deprecate":69,"./runTransitionHook":70,"_process":3,"query-string":77,"warning":79}],73:[function(require,module,exports){
 var pSlice = Array.prototype.slice;
 var objectKeys = require('./lib/keys.js');
 var isArguments = require('./lib/is_arguments.js');
@@ -5357,7 +8943,7 @@ function objEquiv(a, b, opts) {
   return typeof a === typeof b;
 }
 
-},{"./lib/is_arguments.js":60,"./lib/keys.js":61}],60:[function(require,module,exports){
+},{"./lib/is_arguments.js":74,"./lib/keys.js":75}],74:[function(require,module,exports){
 var supportsArgumentsClass = (function(){
   return Object.prototype.toString.call(arguments)
 })() == '[object Arguments]';
@@ -5379,7 +8965,7 @@ function unsupported(object){
     false;
 };
 
-},{}],61:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 exports = module.exports = typeof Object.keys === 'function'
   ? Object.keys : shim;
 
@@ -5390,7 +8976,63 @@ function shim (obj) {
   return keys;
 }
 
-},{}],62:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright 2013-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+'use strict';
+
+/**
+ * Use invariant() to assert state which your program assumes to be true.
+ *
+ * Provide sprintf-style format (only %s is supported) and arguments
+ * to provide information about what broke and what you were
+ * expecting.
+ *
+ * The invariant message will be stripped in production, but the invariant
+ * will remain to ensure logic does not differ in production.
+ */
+
+var invariant = function(condition, format, a, b, c, d, e, f) {
+  if (process.env.NODE_ENV !== 'production') {
+    if (format === undefined) {
+      throw new Error('invariant requires an error message argument');
+    }
+  }
+
+  if (!condition) {
+    var error;
+    if (format === undefined) {
+      error = new Error(
+        'Minified exception occurred; use the non-minified dev environment ' +
+        'for the full error message and additional helpful warnings.'
+      );
+    } else {
+      var args = [a, b, c, d, e, f];
+      var argIndex = 0;
+      error = new Error(
+        format.replace(/%s/g, function() { return args[argIndex++]; })
+      );
+      error.name = 'Invariant Violation';
+    }
+
+    error.framesToPop = 1; // we don't care about invariant's own frame
+    throw error;
+  }
+};
+
+module.exports = invariant;
+
+}).call(this,require('_process'))
+
+},{"_process":3}],77:[function(require,module,exports){
 'use strict';
 var strictUriEncode = require('strict-uri-encode');
 
@@ -5447,7 +9089,7 @@ exports.stringify = function (obj) {
 		}
 
 		if (Array.isArray(val)) {
-			return val.sort().map(function (val2) {
+			return val.slice().sort().map(function (val2) {
 				return strictUriEncode(key) + '=' + strictUriEncode(val2);
 			}).join('&');
 		}
@@ -5458,7 +9100,7 @@ exports.stringify = function (obj) {
 	}).join('&') : '';
 };
 
-},{"strict-uri-encode":63}],63:[function(require,module,exports){
+},{"strict-uri-encode":78}],78:[function(require,module,exports){
 'use strict';
 module.exports = function (str) {
 	return encodeURIComponent(str).replace(/[!'()*]/g, function (c) {
@@ -5466,63 +9108,7 @@ module.exports = function (str) {
 	});
 };
 
-},{}],64:[function(require,module,exports){
-(function (process){
-/**
- * Copyright 2013-2015, Facebook, Inc.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
- */
-
-'use strict';
-
-/**
- * Use invariant() to assert state which your program assumes to be true.
- *
- * Provide sprintf-style format (only %s is supported) and arguments
- * to provide information about what broke and what you were
- * expecting.
- *
- * The invariant message will be stripped in production, but the invariant
- * will remain to ensure logic does not differ in production.
- */
-
-var invariant = function(condition, format, a, b, c, d, e, f) {
-  if (process.env.NODE_ENV !== 'production') {
-    if (format === undefined) {
-      throw new Error('invariant requires an error message argument');
-    }
-  }
-
-  if (!condition) {
-    var error;
-    if (format === undefined) {
-      error = new Error(
-        'Minified exception occurred; use the non-minified dev environment ' +
-        'for the full error message and additional helpful warnings.'
-      );
-    } else {
-      var args = [a, b, c, d, e, f];
-      var argIndex = 0;
-      error = new Error(
-        format.replace(/%s/g, function() { return args[argIndex++]; })
-      );
-      error.name = 'Invariant Violation';
-    }
-
-    error.framesToPop = 1; // we don't care about invariant's own frame
-    throw error;
-  }
-};
-
-module.exports = invariant;
-
-}).call(this,require('_process'))
-
-},{"_process":3}],65:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -5587,7 +9173,3091 @@ module.exports = warning;
 
 }).call(this,require('_process'))
 
-},{"_process":3}],66:[function(require,module,exports){
+},{"_process":3}],80:[function(require,module,exports){
+'use strict';
+
+function ToObject(val) {
+	if (val == null) {
+		throw new TypeError('Object.assign cannot be called with null or undefined');
+	}
+
+	return Object(val);
+}
+
+module.exports = Object.assign || function (target, source) {
+	var from;
+	var keys;
+	var to = ToObject(target);
+
+	for (var s = 1; s < arguments.length; s++) {
+		from = arguments[s];
+		keys = Object.keys(Object(from));
+
+		for (var i = 0; i < keys.length; i++) {
+			to[keys[i]] = from[keys[i]];
+		}
+	}
+
+	return to;
+};
+
+},{}],81:[function(require,module,exports){
+'use strict';
+
+module.exports = require('react/lib/ReactDOM');
+
+},{"react/lib/ReactDOM":152}],82:[function(require,module,exports){
+"use strict";
+
+exports.__esModule = true;
+var _slice = Array.prototype.slice;
+exports.loopAsync = loopAsync;
+exports.mapAsync = mapAsync;
+
+function loopAsync(turns, work, callback) {
+  var currentTurn = 0,
+      isDone = false;
+  var sync = false,
+      hasNext = false,
+      doneArgs = undefined;
+
+  function done() {
+    isDone = true;
+    if (sync) {
+      // Iterate instead of recursing if possible.
+      doneArgs = [].concat(_slice.call(arguments));
+      return;
+    }
+
+    callback.apply(this, arguments);
+  }
+
+  function next() {
+    if (isDone) {
+      return;
+    }
+
+    hasNext = true;
+    if (sync) {
+      // Iterate instead of recursing if possible.
+      return;
+    }
+
+    sync = true;
+
+    while (!isDone && currentTurn < turns && hasNext) {
+      hasNext = false;
+      work.call(this, currentTurn++, next, done);
+    }
+
+    sync = false;
+
+    if (isDone) {
+      // This means the loop finished synchronously.
+      callback.apply(this, doneArgs);
+      return;
+    }
+
+    if (currentTurn >= turns && hasNext) {
+      isDone = true;
+      callback();
+    }
+  }
+
+  next();
+}
+
+function mapAsync(array, work, callback) {
+  var length = array.length;
+  var values = [];
+
+  if (length === 0) return callback(null, values);
+
+  var isDone = false,
+      doneCount = 0;
+
+  function done(index, error, value) {
+    if (isDone) return;
+
+    if (error) {
+      isDone = true;
+      callback(error);
+    } else {
+      values[index] = value;
+
+      isDone = ++doneCount === length;
+
+      if (isDone) callback(null, values);
+    }
+  }
+
+  array.forEach(function (item, index) {
+    work(item, index, function (error, value) {
+      done(index, error, value);
+    });
+  });
+}
+},{}],83:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _PropTypes = require('./PropTypes');
+
+/**
+ * A mixin that adds the "history" instance variable to components.
+ */
+var History = {
+
+  contextTypes: {
+    history: _PropTypes.history
+  },
+
+  componentWillMount: function componentWillMount() {
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'the `History` mixin is deprecated, please access `context.router` with your own `contextTypes`. http://tiny.cc/router-historymixin') : undefined;
+    this.history = this.context.history;
+  }
+
+};
+
+exports['default'] = History;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./PropTypes":90,"./routerWarning":113,"_process":3}],84:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _Link = require('./Link');
+
+var _Link2 = _interopRequireDefault(_Link);
+
+/**
+ * An <IndexLink> is used to link to an <IndexRoute>.
+ */
+var IndexLink = _react2['default'].createClass({
+  displayName: 'IndexLink',
+
+  render: function render() {
+    return _react2['default'].createElement(_Link2['default'], _extends({}, this.props, { onlyActiveOnIndex: true }));
+  }
+
+});
+
+exports['default'] = IndexLink;
+module.exports = exports['default'];
+},{"./Link":88,"react":273}],85:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _Redirect = require('./Redirect');
+
+var _Redirect2 = _interopRequireDefault(_Redirect);
+
+var _PropTypes = require('./PropTypes');
+
+var _React$PropTypes = _react2['default'].PropTypes;
+var string = _React$PropTypes.string;
+var object = _React$PropTypes.object;
+
+/**
+ * An <IndexRedirect> is used to redirect from an indexRoute.
+ */
+var IndexRedirect = _react2['default'].createClass({
+  displayName: 'IndexRedirect',
+
+  statics: {
+
+    createRouteFromReactElement: function createRouteFromReactElement(element, parentRoute) {
+      /* istanbul ignore else: sanity check */
+      if (parentRoute) {
+        parentRoute.indexRoute = _Redirect2['default'].createRouteFromReactElement(element);
+      } else {
+        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'An <IndexRedirect> does not make sense at the root of your route config') : undefined;
+      }
+    }
+
+  },
+
+  propTypes: {
+    to: string.isRequired,
+    query: object,
+    state: object,
+    onEnter: _PropTypes.falsy,
+    children: _PropTypes.falsy
+  },
+
+  /* istanbul ignore next: sanity check */
+  render: function render() {
+    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<IndexRedirect> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
+  }
+
+});
+
+exports['default'] = IndexRedirect;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./PropTypes":90,"./Redirect":91,"./routerWarning":113,"_process":3,"invariant":116,"react":273}],86:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _RouteUtils = require('./RouteUtils');
+
+var _PropTypes = require('./PropTypes');
+
+var func = _react2['default'].PropTypes.func;
+
+/**
+ * An <IndexRoute> is used to specify its parent's <Route indexRoute> in
+ * a JSX route config.
+ */
+var IndexRoute = _react2['default'].createClass({
+  displayName: 'IndexRoute',
+
+  statics: {
+
+    createRouteFromReactElement: function createRouteFromReactElement(element, parentRoute) {
+      /* istanbul ignore else: sanity check */
+      if (parentRoute) {
+        parentRoute.indexRoute = _RouteUtils.createRouteFromReactElement(element);
+      } else {
+        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'An <IndexRoute> does not make sense at the root of your route config') : undefined;
+      }
+    }
+
+  },
+
+  propTypes: {
+    path: _PropTypes.falsy,
+    component: _PropTypes.component,
+    components: _PropTypes.components,
+    getComponent: func,
+    getComponents: func
+  },
+
+  /* istanbul ignore next: sanity check */
+  render: function render() {
+    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<IndexRoute> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
+  }
+
+});
+
+exports['default'] = IndexRoute;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./PropTypes":90,"./RouteUtils":94,"./routerWarning":113,"_process":3,"invariant":116,"react":273}],87:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var object = _react2['default'].PropTypes.object;
+
+/**
+ * The Lifecycle mixin adds the routerWillLeave lifecycle method to a
+ * component that may be used to cancel a transition or prompt the user
+ * for confirmation.
+ *
+ * On standard transitions, routerWillLeave receives a single argument: the
+ * location we're transitioning to. To cancel the transition, return false.
+ * To prompt the user for confirmation, return a prompt message (string).
+ *
+ * During the beforeunload event (assuming you're using the useBeforeUnload
+ * history enhancer), routerWillLeave does not receive a location object
+ * because it isn't possible for us to know the location we're transitioning
+ * to. In this case routerWillLeave must return a prompt message to prevent
+ * the user from closing the window/tab.
+ */
+var Lifecycle = {
+
+  contextTypes: {
+    history: object.isRequired,
+    // Nested children receive the route as context, either
+    // set by the route component using the RouteContext mixin
+    // or by some other ancestor.
+    route: object
+  },
+
+  propTypes: {
+    // Route components receive the route object as a prop.
+    route: object
+  },
+
+  componentDidMount: function componentDidMount() {
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'the `Lifecycle` mixin is deprecated, please use `context.router.setRouteLeaveHook(route, hook)`. http://tiny.cc/router-lifecyclemixin') : undefined;
+    !this.routerWillLeave ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'The Lifecycle mixin requires you to define a routerWillLeave method') : _invariant2['default'](false) : undefined;
+
+    var route = this.props.route || this.context.route;
+
+    !route ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'The Lifecycle mixin must be used on either a) a <Route component> or ' + 'b) a descendant of a <Route component> that uses the RouteContext mixin') : _invariant2['default'](false) : undefined;
+
+    this._unlistenBeforeLeavingRoute = this.context.history.listenBeforeLeavingRoute(route, this.routerWillLeave);
+  },
+
+  componentWillUnmount: function componentWillUnmount() {
+    if (this._unlistenBeforeLeavingRoute) this._unlistenBeforeLeavingRoute();
+  }
+
+};
+
+exports['default'] = Lifecycle;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./routerWarning":113,"_process":3,"invariant":116,"react":273}],88:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _React$PropTypes = _react2['default'].PropTypes;
+var bool = _React$PropTypes.bool;
+var object = _React$PropTypes.object;
+var string = _React$PropTypes.string;
+var func = _React$PropTypes.func;
+var oneOfType = _React$PropTypes.oneOfType;
+
+function isLeftClickEvent(event) {
+  return event.button === 0;
+}
+
+function isModifiedEvent(event) {
+  return !!(event.metaKey || event.altKey || event.ctrlKey || event.shiftKey);
+}
+
+function isEmptyObject(object) {
+  for (var p in object) {
+    if (object.hasOwnProperty(p)) return false;
+  }return true;
+}
+
+function createLocationDescriptor(to, _ref) {
+  var query = _ref.query;
+  var hash = _ref.hash;
+  var state = _ref.state;
+
+  if (query || hash || state) {
+    return { pathname: to, query: query, hash: hash, state: state };
+  }
+
+  return to;
+}
+
+/**
+ * A <Link> is used to create an <a> element that links to a route.
+ * When that route is active, the link gets the value of its
+ * activeClassName prop.
+ *
+ * For example, assuming you have the following route:
+ *
+ *   <Route path="/posts/:postID" component={Post} />
+ *
+ * You could use the following component to link to that route:
+ *
+ *   <Link to={`/posts/${post.id}`} />
+ *
+ * Links may pass along location state and/or query string parameters
+ * in the state/query props, respectively.
+ *
+ *   <Link ... query={{ show: true }} state={{ the: 'state' }} />
+ */
+var Link = _react2['default'].createClass({
+  displayName: 'Link',
+
+  contextTypes: {
+    router: object
+  },
+
+  propTypes: {
+    to: oneOfType([string, object]).isRequired,
+    query: object,
+    hash: string,
+    state: object,
+    activeStyle: object,
+    activeClassName: string,
+    onlyActiveOnIndex: bool.isRequired,
+    onClick: func
+  },
+
+  getDefaultProps: function getDefaultProps() {
+    return {
+      onlyActiveOnIndex: false,
+      className: '',
+      style: {}
+    };
+  },
+
+  handleClick: function handleClick(event) {
+    var allowTransition = true;
+
+    if (this.props.onClick) this.props.onClick(event);
+
+    if (isModifiedEvent(event) || !isLeftClickEvent(event)) return;
+
+    if (event.defaultPrevented === true) allowTransition = false;
+
+    // If target prop is set (e.g. to "_blank") let browser handle link.
+    /* istanbul ignore if: untestable with Karma */
+    if (this.props.target) {
+      if (!allowTransition) event.preventDefault();
+
+      return;
+    }
+
+    event.preventDefault();
+
+    if (allowTransition) {
+      var _props = this.props;
+      var to = _props.to;
+      var query = _props.query;
+      var hash = _props.hash;
+      var state = _props.state;
+
+      var _location = createLocationDescriptor(to, { query: query, hash: hash, state: state });
+
+      this.context.router.push(_location);
+    }
+  },
+
+  render: function render() {
+    var _props2 = this.props;
+    var to = _props2.to;
+    var query = _props2.query;
+    var hash = _props2.hash;
+    var state = _props2.state;
+    var activeClassName = _props2.activeClassName;
+    var activeStyle = _props2.activeStyle;
+    var onlyActiveOnIndex = _props2.onlyActiveOnIndex;
+
+    var props = _objectWithoutProperties(_props2, ['to', 'query', 'hash', 'state', 'activeClassName', 'activeStyle', 'onlyActiveOnIndex']);
+
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](!(query || hash || state), 'the `query`, `hash`, and `state` props on `<Link>` are deprecated, use `<Link to={{ pathname, query, hash, state }}/>. http://tiny.cc/router-isActivedeprecated') : undefined;
+
+    // Ignore if rendered outside the context of router, simplifies unit testing.
+    var router = this.context.router;
+
+    if (router) {
+      var _location2 = createLocationDescriptor(to, { query: query, hash: hash, state: state });
+      props.href = router.createHref(_location2);
+
+      if (activeClassName || activeStyle != null && !isEmptyObject(activeStyle)) {
+        if (router.isActive(_location2, onlyActiveOnIndex)) {
+          if (activeClassName) props.className += props.className === '' ? activeClassName : ' ' + activeClassName;
+
+          if (activeStyle) props.style = _extends({}, props.style, activeStyle);
+        }
+      }
+    }
+
+    return _react2['default'].createElement('a', _extends({}, props, { onClick: this.handleClick }));
+  }
+
+});
+
+exports['default'] = Link;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./routerWarning":113,"_process":3,"react":273}],89:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+exports.compilePattern = compilePattern;
+exports.matchPattern = matchPattern;
+exports.getParamNames = getParamNames;
+exports.getParams = getParams;
+exports.formatPattern = formatPattern;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeSource(string) {
+  return escapeRegExp(string).replace(/\/+/g, '/+');
+}
+
+function _compilePattern(pattern) {
+  var regexpSource = '';
+  var paramNames = [];
+  var tokens = [];
+
+  var match = undefined,
+      lastIndex = 0,
+      matcher = /:([a-zA-Z_$][a-zA-Z0-9_$]*)|\*\*|\*|\(|\)/g;
+  while (match = matcher.exec(pattern)) {
+    if (match.index !== lastIndex) {
+      tokens.push(pattern.slice(lastIndex, match.index));
+      regexpSource += escapeSource(pattern.slice(lastIndex, match.index));
+    }
+
+    if (match[1]) {
+      regexpSource += '([^/?#]+)';
+      paramNames.push(match[1]);
+    } else if (match[0] === '**') {
+      regexpSource += '([\\s\\S]*)';
+      paramNames.push('splat');
+    } else if (match[0] === '*') {
+      regexpSource += '([\\s\\S]*?)';
+      paramNames.push('splat');
+    } else if (match[0] === '(') {
+      regexpSource += '(?:';
+    } else if (match[0] === ')') {
+      regexpSource += ')?';
+    }
+
+    tokens.push(match[0]);
+
+    lastIndex = matcher.lastIndex;
+  }
+
+  if (lastIndex !== pattern.length) {
+    tokens.push(pattern.slice(lastIndex, pattern.length));
+    regexpSource += escapeSource(pattern.slice(lastIndex, pattern.length));
+  }
+
+  return {
+    pattern: pattern,
+    regexpSource: regexpSource,
+    paramNames: paramNames,
+    tokens: tokens
+  };
+}
+
+var CompiledPatternsCache = {};
+
+function compilePattern(pattern) {
+  if (!(pattern in CompiledPatternsCache)) CompiledPatternsCache[pattern] = _compilePattern(pattern);
+
+  return CompiledPatternsCache[pattern];
+}
+
+/**
+ * Attempts to match a pattern on the given pathname. Patterns may use
+ * the following special characters:
+ *
+ * - :paramName     Matches a URL segment up to the next /, ?, or #. The
+ *                  captured string is considered a "param"
+ * - ()             Wraps a segment of the URL that is optional
+ * - *              Consumes (non-greedy) all characters up to the next
+ *                  character in the pattern, or to the end of the URL if
+ *                  there is none
+ * - **             Consumes (greedy) all characters up to the next character
+ *                  in the pattern, or to the end of the URL if there is none
+ *
+ * The return value is an object with the following properties:
+ *
+ * - remainingPathname
+ * - paramNames
+ * - paramValues
+ */
+
+function matchPattern(pattern, pathname) {
+  // Make leading slashes consistent between pattern and pathname.
+  if (pattern.charAt(0) !== '/') {
+    pattern = '/' + pattern;
+  }
+  if (pathname.charAt(0) !== '/') {
+    pathname = '/' + pathname;
+  }
+
+  var _compilePattern2 = compilePattern(pattern);
+
+  var regexpSource = _compilePattern2.regexpSource;
+  var paramNames = _compilePattern2.paramNames;
+  var tokens = _compilePattern2.tokens;
+
+  regexpSource += '/*'; // Capture path separators
+
+  // Special-case patterns like '*' for catch-all routes.
+  var captureRemaining = tokens[tokens.length - 1] !== '*';
+
+  if (captureRemaining) {
+    // This will match newlines in the remaining path.
+    regexpSource += '([\\s\\S]*?)';
+  }
+
+  var match = pathname.match(new RegExp('^' + regexpSource + '$', 'i'));
+
+  var remainingPathname = undefined,
+      paramValues = undefined;
+  if (match != null) {
+    if (captureRemaining) {
+      remainingPathname = match.pop();
+      var matchedPath = match[0].substr(0, match[0].length - remainingPathname.length);
+
+      // If we didn't match the entire pathname, then make sure that the match
+      // we did get ends at a path separator (potentially the one we added
+      // above at the beginning of the path, if the actual match was empty).
+      if (remainingPathname && matchedPath.charAt(matchedPath.length - 1) !== '/') {
+        return {
+          remainingPathname: null,
+          paramNames: paramNames,
+          paramValues: null
+        };
+      }
+    } else {
+      // If this matched at all, then the match was the entire pathname.
+      remainingPathname = '';
+    }
+
+    paramValues = match.slice(1).map(function (v) {
+      return v != null ? decodeURIComponent(v) : v;
+    });
+  } else {
+    remainingPathname = paramValues = null;
+  }
+
+  return {
+    remainingPathname: remainingPathname,
+    paramNames: paramNames,
+    paramValues: paramValues
+  };
+}
+
+function getParamNames(pattern) {
+  return compilePattern(pattern).paramNames;
+}
+
+function getParams(pattern, pathname) {
+  var _matchPattern = matchPattern(pattern, pathname);
+
+  var paramNames = _matchPattern.paramNames;
+  var paramValues = _matchPattern.paramValues;
+
+  if (paramValues != null) {
+    return paramNames.reduce(function (memo, paramName, index) {
+      memo[paramName] = paramValues[index];
+      return memo;
+    }, {});
+  }
+
+  return null;
+}
+
+/**
+ * Returns a version of the given pattern with params interpolated. Throws
+ * if there is a dynamic segment of the pattern for which there is no param.
+ */
+
+function formatPattern(pattern, params) {
+  params = params || {};
+
+  var _compilePattern3 = compilePattern(pattern);
+
+  var tokens = _compilePattern3.tokens;
+
+  var parenCount = 0,
+      pathname = '',
+      splatIndex = 0;
+
+  var token = undefined,
+      paramName = undefined,
+      paramValue = undefined;
+  for (var i = 0, len = tokens.length; i < len; ++i) {
+    token = tokens[i];
+
+    if (token === '*' || token === '**') {
+      paramValue = Array.isArray(params.splat) ? params.splat[splatIndex++] : params.splat;
+
+      !(paramValue != null || parenCount > 0) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'Missing splat #%s for path "%s"', splatIndex, pattern) : _invariant2['default'](false) : undefined;
+
+      if (paramValue != null) pathname += encodeURI(paramValue);
+    } else if (token === '(') {
+      parenCount += 1;
+    } else if (token === ')') {
+      parenCount -= 1;
+    } else if (token.charAt(0) === ':') {
+      paramName = token.substring(1);
+      paramValue = params[paramName];
+
+      !(paramValue != null || parenCount > 0) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'Missing "%s" parameter for path "%s"', paramName, pattern) : _invariant2['default'](false) : undefined;
+
+      if (paramValue != null) pathname += encodeURIComponent(paramValue);
+    } else {
+      pathname += token;
+    }
+  }
+
+  return pathname.replace(/\/+/g, '/');
+}
+}).call(this,require('_process'))
+
+},{"_process":3,"invariant":116}],90:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+exports.falsy = falsy;
+
+var _react = require('react');
+
+var func = _react.PropTypes.func;
+var object = _react.PropTypes.object;
+var arrayOf = _react.PropTypes.arrayOf;
+var oneOfType = _react.PropTypes.oneOfType;
+var element = _react.PropTypes.element;
+var shape = _react.PropTypes.shape;
+var string = _react.PropTypes.string;
+
+function falsy(props, propName, componentName) {
+  if (props[propName]) return new Error('<' + componentName + '> should not have a "' + propName + '" prop');
+}
+
+var history = shape({
+  listen: func.isRequired,
+  pushState: func.isRequired,
+  replaceState: func.isRequired,
+  go: func.isRequired
+});
+
+exports.history = history;
+var location = shape({
+  pathname: string.isRequired,
+  search: string.isRequired,
+  state: object,
+  action: string.isRequired,
+  key: string
+});
+
+exports.location = location;
+var component = oneOfType([func, string]);
+exports.component = component;
+var components = oneOfType([component, object]);
+exports.components = components;
+var route = oneOfType([object, element]);
+exports.route = route;
+var routes = oneOfType([route, arrayOf(route)]);
+
+exports.routes = routes;
+exports['default'] = {
+  falsy: falsy,
+  history: history,
+  location: location,
+  component: component,
+  components: components,
+  route: route
+};
+},{"react":273}],91:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _RouteUtils = require('./RouteUtils');
+
+var _PatternUtils = require('./PatternUtils');
+
+var _PropTypes = require('./PropTypes');
+
+var _React$PropTypes = _react2['default'].PropTypes;
+var string = _React$PropTypes.string;
+var object = _React$PropTypes.object;
+
+/**
+ * A <Redirect> is used to declare another URL path a client should
+ * be sent to when they request a given URL.
+ *
+ * Redirects are placed alongside routes in the route configuration
+ * and are traversed in the same manner.
+ */
+var Redirect = _react2['default'].createClass({
+  displayName: 'Redirect',
+
+  statics: {
+
+    createRouteFromReactElement: function createRouteFromReactElement(element) {
+      var route = _RouteUtils.createRouteFromReactElement(element);
+
+      if (route.from) route.path = route.from;
+
+      route.onEnter = function (nextState, replace) {
+        var location = nextState.location;
+        var params = nextState.params;
+
+        var pathname = undefined;
+        if (route.to.charAt(0) === '/') {
+          pathname = _PatternUtils.formatPattern(route.to, params);
+        } else if (!route.to) {
+          pathname = location.pathname;
+        } else {
+          var routeIndex = nextState.routes.indexOf(route);
+          var parentPattern = Redirect.getRoutePattern(nextState.routes, routeIndex - 1);
+          var pattern = parentPattern.replace(/\/*$/, '/') + route.to;
+          pathname = _PatternUtils.formatPattern(pattern, params);
+        }
+
+        replace({
+          pathname: pathname,
+          query: route.query || location.query,
+          state: route.state || location.state
+        });
+      };
+
+      return route;
+    },
+
+    getRoutePattern: function getRoutePattern(routes, routeIndex) {
+      var parentPattern = '';
+
+      for (var i = routeIndex; i >= 0; i--) {
+        var route = routes[i];
+        var pattern = route.path || '';
+
+        parentPattern = pattern.replace(/\/*$/, '/') + parentPattern;
+
+        if (pattern.indexOf('/') === 0) break;
+      }
+
+      return '/' + parentPattern;
+    }
+
+  },
+
+  propTypes: {
+    path: string,
+    from: string, // Alias for path
+    to: string.isRequired,
+    query: object,
+    state: object,
+    onEnter: _PropTypes.falsy,
+    children: _PropTypes.falsy
+  },
+
+  /* istanbul ignore next: sanity check */
+  render: function render() {
+    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<Redirect> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
+  }
+
+});
+
+exports['default'] = Redirect;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./PatternUtils":89,"./PropTypes":90,"./RouteUtils":94,"_process":3,"invariant":116,"react":273}],92:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _RouteUtils = require('./RouteUtils');
+
+var _PropTypes = require('./PropTypes');
+
+var _React$PropTypes = _react2['default'].PropTypes;
+var string = _React$PropTypes.string;
+var func = _React$PropTypes.func;
+
+/**
+ * A <Route> is used to declare which components are rendered to the
+ * page when the URL matches a given pattern.
+ *
+ * Routes are arranged in a nested tree structure. When a new URL is
+ * requested, the tree is searched depth-first to find a route whose
+ * path matches the URL.  When one is found, all routes in the tree
+ * that lead to it are considered "active" and their components are
+ * rendered into the DOM, nested in the same order as in the tree.
+ */
+var Route = _react2['default'].createClass({
+  displayName: 'Route',
+
+  statics: {
+    createRouteFromReactElement: _RouteUtils.createRouteFromReactElement
+  },
+
+  propTypes: {
+    path: string,
+    component: _PropTypes.component,
+    components: _PropTypes.components,
+    getComponent: func,
+    getComponents: func
+  },
+
+  /* istanbul ignore next: sanity check */
+  render: function render() {
+    !false ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, '<Route> elements are for router configuration only and should not be rendered') : _invariant2['default'](false) : undefined;
+  }
+
+});
+
+exports['default'] = Route;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./PropTypes":90,"./RouteUtils":94,"_process":3,"invariant":116,"react":273}],93:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var object = _react2['default'].PropTypes.object;
+
+/**
+ * The RouteContext mixin provides a convenient way for route
+ * components to set the route in context. This is needed for
+ * routes that render elements that want to use the Lifecycle
+ * mixin to prevent transitions.
+ */
+var RouteContext = {
+
+  propTypes: {
+    route: object.isRequired
+  },
+
+  childContextTypes: {
+    route: object.isRequired
+  },
+
+  getChildContext: function getChildContext() {
+    return {
+      route: this.props.route
+    };
+  },
+
+  componentWillMount: function componentWillMount() {
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'The `RouteContext` mixin is deprecated. You can provide `this.props.route` on context with your own `contextTypes`. http://tiny.cc/router-routecontextmixin') : undefined;
+  }
+
+};
+
+exports['default'] = RouteContext;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./routerWarning":113,"_process":3,"react":273}],94:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+exports.isReactChildren = isReactChildren;
+exports.createRouteFromReactElement = createRouteFromReactElement;
+exports.createRoutesFromReactChildren = createRoutesFromReactChildren;
+exports.createRoutes = createRoutes;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+function isValidChild(object) {
+  return object == null || _react2['default'].isValidElement(object);
+}
+
+function isReactChildren(object) {
+  return isValidChild(object) || Array.isArray(object) && object.every(isValidChild);
+}
+
+function checkPropTypes(componentName, propTypes, props) {
+  componentName = componentName || 'UnknownComponent';
+
+  for (var propName in propTypes) {
+    if (propTypes.hasOwnProperty(propName)) {
+      var error = propTypes[propName](props, propName, componentName);
+
+      /* istanbul ignore if: error logging */
+      if (error instanceof Error) process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, error.message) : undefined;
+    }
+  }
+}
+
+function createRoute(defaultProps, props) {
+  return _extends({}, defaultProps, props);
+}
+
+function createRouteFromReactElement(element) {
+  var type = element.type;
+  var route = createRoute(type.defaultProps, element.props);
+
+  if (type.propTypes) checkPropTypes(type.displayName || type.name, type.propTypes, route);
+
+  if (route.children) {
+    var childRoutes = createRoutesFromReactChildren(route.children, route);
+
+    if (childRoutes.length) route.childRoutes = childRoutes;
+
+    delete route.children;
+  }
+
+  return route;
+}
+
+/**
+ * Creates and returns a routes object from the given ReactChildren. JSX
+ * provides a convenient way to visualize how routes in the hierarchy are
+ * nested.
+ *
+ *   import { Route, createRoutesFromReactChildren } from 'react-router'
+ *   
+ *   const routes = createRoutesFromReactChildren(
+ *     <Route component={App}>
+ *       <Route path="home" component={Dashboard}/>
+ *       <Route path="news" component={NewsFeed}/>
+ *     </Route>
+ *   )
+ *
+ * Note: This method is automatically used when you provide <Route> children
+ * to a <Router> component.
+ */
+
+function createRoutesFromReactChildren(children, parentRoute) {
+  var routes = [];
+
+  _react2['default'].Children.forEach(children, function (element) {
+    if (_react2['default'].isValidElement(element)) {
+      // Component classes may have a static create* method.
+      if (element.type.createRouteFromReactElement) {
+        var route = element.type.createRouteFromReactElement(element, parentRoute);
+
+        if (route) routes.push(route);
+      } else {
+        routes.push(createRouteFromReactElement(element));
+      }
+    }
+  });
+
+  return routes;
+}
+
+/**
+ * Creates and returns an array of routes from the given object which
+ * may be a JSX route, a plain object route, or an array of either.
+ */
+
+function createRoutes(routes) {
+  if (isReactChildren(routes)) {
+    routes = createRoutesFromReactChildren(routes);
+  } else if (routes && !Array.isArray(routes)) {
+    routes = [routes];
+  }
+
+  return routes;
+}
+}).call(this,require('_process'))
+
+},{"./routerWarning":113,"_process":3,"react":273}],95:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var _historyLibCreateHashHistory = require('history/lib/createHashHistory');
+
+var _historyLibCreateHashHistory2 = _interopRequireDefault(_historyLibCreateHashHistory);
+
+var _historyLibUseQueries = require('history/lib/useQueries');
+
+var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _createTransitionManager = require('./createTransitionManager');
+
+var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
+
+var _PropTypes = require('./PropTypes');
+
+var _RouterContext = require('./RouterContext');
+
+var _RouterContext2 = _interopRequireDefault(_RouterContext);
+
+var _RouteUtils = require('./RouteUtils');
+
+var _RouterUtils = require('./RouterUtils');
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+function isDeprecatedHistory(history) {
+  return !history || !history.__v2_compatible__;
+}
+
+var _React$PropTypes = _react2['default'].PropTypes;
+var func = _React$PropTypes.func;
+var object = _React$PropTypes.object;
+
+/**
+ * A <Router> is a high-level API for automatically setting up
+ * a router that renders a <RouterContext> with all the props
+ * it needs each time the URL changes.
+ */
+var Router = _react2['default'].createClass({
+  displayName: 'Router',
+
+  propTypes: {
+    history: object,
+    children: _PropTypes.routes,
+    routes: _PropTypes.routes, // alias for children
+    render: func,
+    createElement: func,
+    onError: func,
+    onUpdate: func,
+
+    // PRIVATE: For client-side rehydration of server match.
+    matchContext: object
+  },
+
+  getDefaultProps: function getDefaultProps() {
+    return {
+      render: function render(props) {
+        return _react2['default'].createElement(_RouterContext2['default'], props);
+      }
+    };
+  },
+
+  getInitialState: function getInitialState() {
+    return {
+      location: null,
+      routes: null,
+      params: null,
+      components: null
+    };
+  },
+
+  handleError: function handleError(error) {
+    if (this.props.onError) {
+      this.props.onError.call(this, error);
+    } else {
+      // Throw errors by default so we don't silently swallow them!
+      throw error; // This error probably occurred in getChildRoutes or getComponents.
+    }
+  },
+
+  componentWillMount: function componentWillMount() {
+    var _this = this;
+
+    var _props = this.props;
+    var parseQueryString = _props.parseQueryString;
+    var stringifyQuery = _props.stringifyQuery;
+
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](!(parseQueryString || stringifyQuery), '`parseQueryString` and `stringifyQuery` are deprecated. Please create a custom history. http://tiny.cc/router-customquerystring') : undefined;
+
+    var _createRouterObjects = this.createRouterObjects();
+
+    var history = _createRouterObjects.history;
+    var transitionManager = _createRouterObjects.transitionManager;
+    var router = _createRouterObjects.router;
+
+    this._unlisten = transitionManager.listen(function (error, state) {
+      if (error) {
+        _this.handleError(error);
+      } else {
+        _this.setState(state, _this.props.onUpdate);
+      }
+    });
+
+    this.history = history;
+    this.router = router;
+  },
+
+  createRouterObjects: function createRouterObjects() {
+    var matchContext = this.props.matchContext;
+
+    if (matchContext) {
+      return matchContext;
+    }
+
+    var history = this.props.history;
+    var _props2 = this.props;
+    var routes = _props2.routes;
+    var children = _props2.children;
+
+    if (isDeprecatedHistory(history)) {
+      history = this.wrapDeprecatedHistory(history);
+    }
+
+    var transitionManager = _createTransitionManager2['default'](history, _RouteUtils.createRoutes(routes || children));
+    var router = _RouterUtils.createRouterObject(history, transitionManager);
+    var routingHistory = _RouterUtils.createRoutingHistory(history, transitionManager);
+
+    return { history: routingHistory, transitionManager: transitionManager, router: router };
+  },
+
+  wrapDeprecatedHistory: function wrapDeprecatedHistory(history) {
+    var _props3 = this.props;
+    var parseQueryString = _props3.parseQueryString;
+    var stringifyQuery = _props3.stringifyQuery;
+
+    var createHistory = undefined;
+    if (history) {
+      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'It appears you have provided a deprecated history object to `<Router/>`, please use a history provided by ' + 'React Router with `import { browserHistory } from \'react-router\'` or `import { hashHistory } from \'react-router\'`. ' + 'If you are using a custom history please create it with `useRouterHistory`, see http://tiny.cc/router-usinghistory for details.') : undefined;
+      createHistory = function () {
+        return history;
+      };
+    } else {
+      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`Router` no longer defaults the history prop to hash history. Please use the `hashHistory` singleton instead. http://tiny.cc/router-defaulthistory') : undefined;
+      createHistory = _historyLibCreateHashHistory2['default'];
+    }
+
+    return _historyLibUseQueries2['default'](createHistory)({ parseQueryString: parseQueryString, stringifyQuery: stringifyQuery });
+  },
+
+  /* istanbul ignore next: sanity check */
+  componentWillReceiveProps: function componentWillReceiveProps(nextProps) {
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](nextProps.history === this.props.history, 'You cannot change <Router history>; it will be ignored') : undefined;
+
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default']((nextProps.routes || nextProps.children) === (this.props.routes || this.props.children), 'You cannot change <Router routes>; it will be ignored') : undefined;
+  },
+
+  componentWillUnmount: function componentWillUnmount() {
+    if (this._unlisten) this._unlisten();
+  },
+
+  render: function render() {
+    var _state = this.state;
+    var location = _state.location;
+    var routes = _state.routes;
+    var params = _state.params;
+    var components = _state.components;
+    var _props4 = this.props;
+    var createElement = _props4.createElement;
+    var render = _props4.render;
+
+    var props = _objectWithoutProperties(_props4, ['createElement', 'render']);
+
+    if (location == null) return null; // Async match
+
+    // Only forward non-Router-specific props to routing context, as those are
+    // the only ones that might be custom routing context props.
+    Object.keys(Router.propTypes).forEach(function (propType) {
+      return delete props[propType];
+    });
+
+    return render(_extends({}, props, {
+      history: this.history,
+      router: this.router,
+      location: location,
+      routes: routes,
+      params: params,
+      components: components,
+      createElement: createElement
+    }));
+  }
+
+});
+
+exports['default'] = Router;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./PropTypes":90,"./RouteUtils":94,"./RouterContext":96,"./RouterUtils":97,"./createTransitionManager":104,"./routerWarning":113,"_process":3,"history/lib/createHashHistory":65,"history/lib/useQueries":72,"react":273}],96:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _deprecateObjectProperties = require('./deprecateObjectProperties');
+
+var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
+
+var _getRouteParams = require('./getRouteParams');
+
+var _getRouteParams2 = _interopRequireDefault(_getRouteParams);
+
+var _RouteUtils = require('./RouteUtils');
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _React$PropTypes = _react2['default'].PropTypes;
+var array = _React$PropTypes.array;
+var func = _React$PropTypes.func;
+var object = _React$PropTypes.object;
+
+/**
+ * A <RouterContext> renders the component tree for a given router state
+ * and sets the history object and the current location in context.
+ */
+var RouterContext = _react2['default'].createClass({
+  displayName: 'RouterContext',
+
+  propTypes: {
+    history: object,
+    router: object.isRequired,
+    location: object.isRequired,
+    routes: array.isRequired,
+    params: object.isRequired,
+    components: array.isRequired,
+    createElement: func.isRequired
+  },
+
+  getDefaultProps: function getDefaultProps() {
+    return {
+      createElement: _react2['default'].createElement
+    };
+  },
+
+  childContextTypes: {
+    history: object,
+    location: object.isRequired,
+    router: object.isRequired
+  },
+
+  getChildContext: function getChildContext() {
+    var _props = this.props;
+    var router = _props.router;
+    var history = _props.history;
+    var location = _props.location;
+
+    if (!router) {
+      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`<RouterContext>` expects a `router` rather than a `history`') : undefined;
+
+      router = _extends({}, history, {
+        setRouteLeaveHook: history.listenBeforeLeavingRoute
+      });
+      delete router.listenBeforeLeavingRoute;
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      location = _deprecateObjectProperties2['default'](location, '`context.location` is deprecated, please use a route component\'s `props.location` instead. http://tiny.cc/router-accessinglocation');
+    }
+
+    return { history: history, location: location, router: router };
+  },
+
+  createElement: function createElement(component, props) {
+    return component == null ? null : this.props.createElement(component, props);
+  },
+
+  render: function render() {
+    var _this = this;
+
+    var _props2 = this.props;
+    var history = _props2.history;
+    var location = _props2.location;
+    var routes = _props2.routes;
+    var params = _props2.params;
+    var components = _props2.components;
+
+    var element = null;
+
+    if (components) {
+      element = components.reduceRight(function (element, components, index) {
+        if (components == null) return element; // Don't create new children; use the grandchildren.
+
+        var route = routes[index];
+        var routeParams = _getRouteParams2['default'](route, params);
+        var props = {
+          history: history,
+          location: location,
+          params: params,
+          route: route,
+          routeParams: routeParams,
+          routes: routes
+        };
+
+        if (_RouteUtils.isReactChildren(element)) {
+          props.children = element;
+        } else if (element) {
+          for (var prop in element) {
+            if (element.hasOwnProperty(prop)) props[prop] = element[prop];
+          }
+        }
+
+        if (typeof components === 'object') {
+          var elements = {};
+
+          for (var key in components) {
+            if (components.hasOwnProperty(key)) {
+              // Pass through the key as a prop to createElement to allow
+              // custom createElement functions to know which named component
+              // they're rendering, for e.g. matching up to fetched data.
+              elements[key] = _this.createElement(components[key], _extends({
+                key: key }, props));
+            }
+          }
+
+          return elements;
+        }
+
+        return _this.createElement(components, props);
+      }, element);
+    }
+
+    !(element === null || element === false || _react2['default'].isValidElement(element)) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'The root route must render a single element') : _invariant2['default'](false) : undefined;
+
+    return element;
+  }
+
+});
+
+exports['default'] = RouterContext;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./RouteUtils":94,"./deprecateObjectProperties":105,"./getRouteParams":107,"./routerWarning":113,"_process":3,"invariant":116,"react":273}],97:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+exports.createRouterObject = createRouterObject;
+exports.createRoutingHistory = createRoutingHistory;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _deprecateObjectProperties = require('./deprecateObjectProperties');
+
+var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
+
+function createRouterObject(history, transitionManager) {
+  return _extends({}, history, {
+    setRouteLeaveHook: transitionManager.listenBeforeLeavingRoute,
+    isActive: transitionManager.isActive
+  });
+}
+
+// deprecated
+
+function createRoutingHistory(history, transitionManager) {
+  history = _extends({}, history, transitionManager);
+
+  if (process.env.NODE_ENV !== 'production') {
+    history = _deprecateObjectProperties2['default'](history, '`props.history` and `context.history` are deprecated. Please use `context.router`. http://tiny.cc/router-contextchanges');
+  }
+
+  return history;
+}
+}).call(this,require('_process'))
+
+},{"./deprecateObjectProperties":105,"_process":3}],98:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _RouterContext = require('./RouterContext');
+
+var _RouterContext2 = _interopRequireDefault(_RouterContext);
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var RoutingContext = _react2['default'].createClass({
+  displayName: 'RoutingContext',
+
+  componentWillMount: function componentWillMount() {
+    process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`RoutingContext` has been renamed to `RouterContext`. Please use `import { RouterContext } from \'react-router\'`. http://tiny.cc/router-routercontext') : undefined;
+  },
+
+  render: function render() {
+    return _react2['default'].createElement(_RouterContext2['default'], this.props);
+  }
+});
+
+exports['default'] = RoutingContext;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./RouterContext":96,"./routerWarning":113,"_process":3,"react":273}],99:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+exports.runEnterHooks = runEnterHooks;
+exports.runLeaveHooks = runLeaveHooks;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _AsyncUtils = require('./AsyncUtils');
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+function createEnterHook(hook, route) {
+  return function (a, b, callback) {
+    hook.apply(route, arguments);
+
+    if (hook.length < 3) {
+      // Assume hook executes synchronously and
+      // automatically call the callback.
+      callback();
+    }
+  };
+}
+
+function getEnterHooks(routes) {
+  return routes.reduce(function (hooks, route) {
+    if (route.onEnter) hooks.push(createEnterHook(route.onEnter, route));
+
+    return hooks;
+  }, []);
+}
+
+/**
+ * Runs all onEnter hooks in the given array of routes in order
+ * with onEnter(nextState, replace, callback) and calls
+ * callback(error, redirectInfo) when finished. The first hook
+ * to use replace short-circuits the loop.
+ *
+ * If a hook needs to run asynchronously, it may use the callback
+ * function. However, doing so will cause the transition to pause,
+ * which could lead to a non-responsive UI if the hook is slow.
+ */
+
+function runEnterHooks(routes, nextState, callback) {
+  var hooks = getEnterHooks(routes);
+
+  if (!hooks.length) {
+    callback();
+    return;
+  }
+
+  var redirectInfo = undefined;
+  function replace(location, deprecatedPathname, deprecatedQuery) {
+    if (deprecatedPathname) {
+      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`replaceState(state, pathname, query) is deprecated; use `replace(location)` with a location descriptor instead. http://tiny.cc/router-isActivedeprecated') : undefined;
+      redirectInfo = {
+        pathname: deprecatedPathname,
+        query: deprecatedQuery,
+        state: location
+      };
+
+      return;
+    }
+
+    redirectInfo = location;
+  }
+
+  _AsyncUtils.loopAsync(hooks.length, function (index, next, done) {
+    hooks[index](nextState, replace, function (error) {
+      if (error || redirectInfo) {
+        done(error, redirectInfo); // No need to continue.
+      } else {
+          next();
+        }
+    });
+  }, callback);
+}
+
+/**
+ * Runs all onLeave hooks in the given array of routes in order.
+ */
+
+function runLeaveHooks(routes) {
+  for (var i = 0, len = routes.length; i < len; ++i) {
+    if (routes[i].onLeave) routes[i].onLeave.call(routes[i]);
+  }
+}
+}).call(this,require('_process'))
+
+},{"./AsyncUtils":82,"./routerWarning":113,"_process":3}],100:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _historyLibCreateBrowserHistory = require('history/lib/createBrowserHistory');
+
+var _historyLibCreateBrowserHistory2 = _interopRequireDefault(_historyLibCreateBrowserHistory);
+
+var _createRouterHistory = require('./createRouterHistory');
+
+var _createRouterHistory2 = _interopRequireDefault(_createRouterHistory);
+
+exports['default'] = _createRouterHistory2['default'](_historyLibCreateBrowserHistory2['default']);
+module.exports = exports['default'];
+},{"./createRouterHistory":103,"history/lib/createBrowserHistory":63}],101:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+var _PatternUtils = require('./PatternUtils');
+
+function routeParamsChanged(route, prevState, nextState) {
+  if (!route.path) return false;
+
+  var paramNames = _PatternUtils.getParamNames(route.path);
+
+  return paramNames.some(function (paramName) {
+    return prevState.params[paramName] !== nextState.params[paramName];
+  });
+}
+
+/**
+ * Returns an object of { leaveRoutes, enterRoutes } determined by
+ * the change from prevState to nextState. We leave routes if either
+ * 1) they are not in the next state or 2) they are in the next state
+ * but their params have changed (i.e. /users/123 => /users/456).
+ *
+ * leaveRoutes are ordered starting at the leaf route of the tree
+ * we're leaving up to the common parent route. enterRoutes are ordered
+ * from the top of the tree we're entering down to the leaf route.
+ */
+function computeChangedRoutes(prevState, nextState) {
+  var prevRoutes = prevState && prevState.routes;
+  var nextRoutes = nextState.routes;
+
+  var leaveRoutes = undefined,
+      enterRoutes = undefined;
+  if (prevRoutes) {
+    (function () {
+      var parentIsLeaving = false;
+      leaveRoutes = prevRoutes.filter(function (route) {
+        if (parentIsLeaving) {
+          return true;
+        } else {
+          var isLeaving = nextRoutes.indexOf(route) === -1 || routeParamsChanged(route, prevState, nextState);
+          if (isLeaving) parentIsLeaving = true;
+          return isLeaving;
+        }
+      });
+
+      // onLeave hooks start at the leaf route.
+      leaveRoutes.reverse();
+
+      enterRoutes = nextRoutes.filter(function (route) {
+        return prevRoutes.indexOf(route) === -1 || leaveRoutes.indexOf(route) !== -1;
+      });
+    })();
+  } else {
+    leaveRoutes = [];
+    enterRoutes = nextRoutes;
+  }
+
+  return {
+    leaveRoutes: leaveRoutes,
+    enterRoutes: enterRoutes
+  };
+}
+
+exports['default'] = computeChangedRoutes;
+module.exports = exports['default'];
+},{"./PatternUtils":89}],102:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+exports['default'] = createMemoryHistory;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _historyLibUseQueries = require('history/lib/useQueries');
+
+var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
+
+var _historyLibUseBasename = require('history/lib/useBasename');
+
+var _historyLibUseBasename2 = _interopRequireDefault(_historyLibUseBasename);
+
+var _historyLibCreateMemoryHistory = require('history/lib/createMemoryHistory');
+
+var _historyLibCreateMemoryHistory2 = _interopRequireDefault(_historyLibCreateMemoryHistory);
+
+function createMemoryHistory(options) {
+  // signatures and type checking differ between `useRoutes` and
+  // `createMemoryHistory`, have to create `memoryHistory` first because
+  // `useQueries` doesn't understand the signature
+  var memoryHistory = _historyLibCreateMemoryHistory2['default'](options);
+  var createHistory = function createHistory() {
+    return memoryHistory;
+  };
+  var history = _historyLibUseQueries2['default'](_historyLibUseBasename2['default'](createHistory))(options);
+  history.__v2_compatible__ = true;
+  return history;
+}
+
+module.exports = exports['default'];
+},{"history/lib/createMemoryHistory":68,"history/lib/useBasename":71,"history/lib/useQueries":72}],103:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _useRouterHistory = require('./useRouterHistory');
+
+var _useRouterHistory2 = _interopRequireDefault(_useRouterHistory);
+
+var canUseDOM = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
+
+exports['default'] = function (createHistory) {
+  var history = undefined;
+  if (canUseDOM) history = _useRouterHistory2['default'](createHistory)();
+  return history;
+};
+
+module.exports = exports['default'];
+},{"./useRouterHistory":114}],104:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+exports['default'] = createTransitionManager;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _historyLibActions = require('history/lib/Actions');
+
+var _computeChangedRoutes2 = require('./computeChangedRoutes');
+
+var _computeChangedRoutes3 = _interopRequireDefault(_computeChangedRoutes2);
+
+var _TransitionUtils = require('./TransitionUtils');
+
+var _isActive2 = require('./isActive');
+
+var _isActive3 = _interopRequireDefault(_isActive2);
+
+var _getComponents = require('./getComponents');
+
+var _getComponents2 = _interopRequireDefault(_getComponents);
+
+var _matchRoutes = require('./matchRoutes');
+
+var _matchRoutes2 = _interopRequireDefault(_matchRoutes);
+
+function hasAnyProperties(object) {
+  for (var p in object) {
+    if (object.hasOwnProperty(p)) return true;
+  }return false;
+}
+
+function createTransitionManager(history, routes) {
+  var state = {};
+
+  // Signature should be (location, indexOnly), but needs to support (path,
+  // query, indexOnly)
+  function isActive(location) {
+    var indexOnlyOrDeprecatedQuery = arguments.length <= 1 || arguments[1] === undefined ? false : arguments[1];
+    var deprecatedIndexOnly = arguments.length <= 2 || arguments[2] === undefined ? null : arguments[2];
+
+    var indexOnly = undefined;
+    if (indexOnlyOrDeprecatedQuery && indexOnlyOrDeprecatedQuery !== true || deprecatedIndexOnly !== null) {
+      process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`isActive(pathname, query, indexOnly) is deprecated; use `isActive(location, indexOnly)` with a location descriptor instead. http://tiny.cc/router-isActivedeprecated') : undefined;
+      location = { pathname: location, query: indexOnlyOrDeprecatedQuery };
+      indexOnly = deprecatedIndexOnly || false;
+    } else {
+      location = history.createLocation(location);
+      indexOnly = indexOnlyOrDeprecatedQuery;
+    }
+
+    return _isActive3['default'](location, indexOnly, state.location, state.routes, state.params);
+  }
+
+  function createLocationFromRedirectInfo(location) {
+    return history.createLocation(location, _historyLibActions.REPLACE);
+  }
+
+  var partialNextState = undefined;
+
+  function match(location, callback) {
+    if (partialNextState && partialNextState.location === location) {
+      // Continue from where we left off.
+      finishMatch(partialNextState, callback);
+    } else {
+      _matchRoutes2['default'](routes, location, function (error, nextState) {
+        if (error) {
+          callback(error);
+        } else if (nextState) {
+          finishMatch(_extends({}, nextState, { location: location }), callback);
+        } else {
+          callback();
+        }
+      });
+    }
+  }
+
+  function finishMatch(nextState, callback) {
+    var _computeChangedRoutes = _computeChangedRoutes3['default'](state, nextState);
+
+    var leaveRoutes = _computeChangedRoutes.leaveRoutes;
+    var enterRoutes = _computeChangedRoutes.enterRoutes;
+
+    _TransitionUtils.runLeaveHooks(leaveRoutes);
+
+    // Tear down confirmation hooks for left routes
+    leaveRoutes.filter(function (route) {
+      return enterRoutes.indexOf(route) === -1;
+    }).forEach(removeListenBeforeHooksForRoute);
+
+    _TransitionUtils.runEnterHooks(enterRoutes, nextState, function (error, redirectInfo) {
+      if (error) {
+        callback(error);
+      } else if (redirectInfo) {
+        callback(null, createLocationFromRedirectInfo(redirectInfo));
+      } else {
+        // TODO: Fetch components after state is updated.
+        _getComponents2['default'](nextState, function (error, components) {
+          if (error) {
+            callback(error);
+          } else {
+            // TODO: Make match a pure function and have some other API
+            // for "match and update state".
+            callback(null, null, state = _extends({}, nextState, { components: components }));
+          }
+        });
+      }
+    });
+  }
+
+  var RouteGuid = 1;
+
+  function getRouteID(route) {
+    var create = arguments.length <= 1 || arguments[1] === undefined ? true : arguments[1];
+
+    return route.__id__ || create && (route.__id__ = RouteGuid++);
+  }
+
+  var RouteHooks = {};
+
+  function getRouteHooksForRoutes(routes) {
+    return routes.reduce(function (hooks, route) {
+      hooks.push.apply(hooks, RouteHooks[getRouteID(route)]);
+      return hooks;
+    }, []);
+  }
+
+  function transitionHook(location, callback) {
+    _matchRoutes2['default'](routes, location, function (error, nextState) {
+      if (nextState == null) {
+        // TODO: We didn't actually match anything, but hang
+        // onto error/nextState so we don't have to matchRoutes
+        // again in the listen callback.
+        callback();
+        return;
+      }
+
+      // Cache some state here so we don't have to
+      // matchRoutes() again in the listen callback.
+      partialNextState = _extends({}, nextState, { location: location });
+
+      var hooks = getRouteHooksForRoutes(_computeChangedRoutes3['default'](state, partialNextState).leaveRoutes);
+
+      var result = undefined;
+      for (var i = 0, len = hooks.length; result == null && i < len; ++i) {
+        // Passing the location arg here indicates to
+        // the user that this is a transition hook.
+        result = hooks[i](location);
+      }
+
+      callback(result);
+    });
+  }
+
+  /* istanbul ignore next: untestable with Karma */
+  function beforeUnloadHook() {
+    // Synchronously check to see if any route hooks want
+    // to prevent the current window/tab from closing.
+    if (state.routes) {
+      var hooks = getRouteHooksForRoutes(state.routes);
+
+      var message = undefined;
+      for (var i = 0, len = hooks.length; typeof message !== 'string' && i < len; ++i) {
+        // Passing no args indicates to the user that this is a
+        // beforeunload hook. We don't know the next location.
+        message = hooks[i]();
+      }
+
+      return message;
+    }
+  }
+
+  var unlistenBefore = undefined,
+      unlistenBeforeUnload = undefined;
+
+  function removeListenBeforeHooksForRoute(route) {
+    var routeID = getRouteID(route, false);
+    if (!routeID) {
+      return;
+    }
+
+    delete RouteHooks[routeID];
+
+    if (!hasAnyProperties(RouteHooks)) {
+      // teardown transition & beforeunload hooks
+      if (unlistenBefore) {
+        unlistenBefore();
+        unlistenBefore = null;
+      }
+
+      if (unlistenBeforeUnload) {
+        unlistenBeforeUnload();
+        unlistenBeforeUnload = null;
+      }
+    }
+  }
+
+  /**
+   * Registers the given hook function to run before leaving the given route.
+   *
+   * During a normal transition, the hook function receives the next location
+   * as its only argument and must return either a) a prompt message to show
+   * the user, to make sure they want to leave the page or b) false, to prevent
+   * the transition.
+   *
+   * During the beforeunload event (in browsers) the hook receives no arguments.
+   * In this case it must return a prompt message to prevent the transition.
+   *
+   * Returns a function that may be used to unbind the listener.
+   */
+  function listenBeforeLeavingRoute(route, hook) {
+    // TODO: Warn if they register for a route that isn't currently
+    // active. They're probably doing something wrong, like re-creating
+    // route objects on every location change.
+    var routeID = getRouteID(route);
+    var hooks = RouteHooks[routeID];
+
+    if (!hooks) {
+      var thereWereNoRouteHooks = !hasAnyProperties(RouteHooks);
+
+      RouteHooks[routeID] = [hook];
+
+      if (thereWereNoRouteHooks) {
+        // setup transition & beforeunload hooks
+        unlistenBefore = history.listenBefore(transitionHook);
+
+        if (history.listenBeforeUnload) unlistenBeforeUnload = history.listenBeforeUnload(beforeUnloadHook);
+      }
+    } else {
+      if (hooks.indexOf(hook) === -1) {
+        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'adding multiple leave hooks for the same route is deprecated; manage multiple confirmations in your own code instead') : undefined;
+
+        hooks.push(hook);
+      }
+    }
+
+    return function () {
+      var hooks = RouteHooks[routeID];
+
+      if (hooks) {
+        var newHooks = hooks.filter(function (item) {
+          return item !== hook;
+        });
+
+        if (newHooks.length === 0) {
+          removeListenBeforeHooksForRoute(route);
+        } else {
+          RouteHooks[routeID] = newHooks;
+        }
+      }
+    };
+  }
+
+  /**
+   * This is the API for stateful environments. As the location
+   * changes, we update state and call the listener. We can also
+   * gracefully handle errors and redirects.
+   */
+  function listen(listener) {
+    // TODO: Only use a single history listener. Otherwise we'll
+    // end up with multiple concurrent calls to match.
+    return history.listen(function (location) {
+      if (state.location === location) {
+        listener(null, state);
+      } else {
+        match(location, function (error, redirectLocation, nextState) {
+          if (error) {
+            listener(error);
+          } else if (redirectLocation) {
+            history.transitionTo(redirectLocation);
+          } else if (nextState) {
+            listener(null, nextState);
+          } else {
+            process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, 'Location "%s" did not match any routes', location.pathname + location.search + location.hash) : undefined;
+          }
+        });
+      }
+    });
+  }
+
+  return {
+    isActive: isActive,
+    match: match,
+    listenBeforeLeavingRoute: listenBeforeLeavingRoute,
+    listen: listen
+  };
+}
+
+//export default useRoutes
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./TransitionUtils":99,"./computeChangedRoutes":101,"./getComponents":106,"./isActive":110,"./matchRoutes":112,"./routerWarning":113,"_process":3,"history/lib/Actions":57}],105:[function(require,module,exports){
+(function (process){
+/*eslint no-empty: 0*/
+'use strict';
+
+exports.__esModule = true;
+exports['default'] = deprecateObjectProperties;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var useMembrane = false;
+
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    if (Object.defineProperty({}, 'x', { get: function get() {
+        return true;
+      } }).x) {
+      useMembrane = true;
+    }
+  } catch (e) {}
+}
+
+// wraps an object in a membrane to warn about deprecated property access
+
+function deprecateObjectProperties(object, message) {
+  if (!useMembrane) return object;
+
+  var membrane = {};
+
+  var _loop = function (prop) {
+    if (typeof object[prop] === 'function') {
+      membrane[prop] = function () {
+        process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, message) : undefined;
+        return object[prop].apply(object, arguments);
+      };
+    } else {
+      Object.defineProperty(membrane, prop, {
+        configurable: false,
+        enumerable: false,
+        get: function get() {
+          process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, message) : undefined;
+          return object[prop];
+        }
+      });
+    }
+  };
+
+  for (var prop in object) {
+    _loop(prop);
+  }
+
+  return membrane;
+}
+
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./routerWarning":113,"_process":3}],106:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+var _AsyncUtils = require('./AsyncUtils');
+
+function getComponentsForRoute(location, route, callback) {
+  if (route.component || route.components) {
+    callback(null, route.component || route.components);
+  } else if (route.getComponent) {
+    route.getComponent(location, callback);
+  } else if (route.getComponents) {
+    route.getComponents(location, callback);
+  } else {
+    callback();
+  }
+}
+
+/**
+ * Asynchronously fetches all components needed for the given router
+ * state and calls callback(error, components) when finished.
+ *
+ * Note: This operation may finish synchronously if no routes have an
+ * asynchronous getComponents method.
+ */
+function getComponents(nextState, callback) {
+  _AsyncUtils.mapAsync(nextState.routes, function (route, index, callback) {
+    getComponentsForRoute(nextState.location, route, callback);
+  }, callback);
+}
+
+exports['default'] = getComponents;
+module.exports = exports['default'];
+},{"./AsyncUtils":82}],107:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+var _PatternUtils = require('./PatternUtils');
+
+/**
+ * Extracts an object of params the given route cares about from
+ * the given params object.
+ */
+function getRouteParams(route, params) {
+  var routeParams = {};
+
+  if (!route.path) return routeParams;
+
+  var paramNames = _PatternUtils.getParamNames(route.path);
+
+  for (var p in params) {
+    if (params.hasOwnProperty(p) && paramNames.indexOf(p) !== -1) routeParams[p] = params[p];
+  }return routeParams;
+}
+
+exports['default'] = getRouteParams;
+module.exports = exports['default'];
+},{"./PatternUtils":89}],108:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _historyLibCreateHashHistory = require('history/lib/createHashHistory');
+
+var _historyLibCreateHashHistory2 = _interopRequireDefault(_historyLibCreateHashHistory);
+
+var _createRouterHistory = require('./createRouterHistory');
+
+var _createRouterHistory2 = _interopRequireDefault(_createRouterHistory);
+
+exports['default'] = _createRouterHistory2['default'](_historyLibCreateHashHistory2['default']);
+module.exports = exports['default'];
+},{"./createRouterHistory":103,"history/lib/createHashHistory":65}],109:[function(require,module,exports){
+/* components */
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _Router2 = require('./Router');
+
+var _Router3 = _interopRequireDefault(_Router2);
+
+exports.Router = _Router3['default'];
+
+var _Link2 = require('./Link');
+
+var _Link3 = _interopRequireDefault(_Link2);
+
+exports.Link = _Link3['default'];
+
+var _IndexLink2 = require('./IndexLink');
+
+var _IndexLink3 = _interopRequireDefault(_IndexLink2);
+
+exports.IndexLink = _IndexLink3['default'];
+
+/* components (configuration) */
+
+var _IndexRedirect2 = require('./IndexRedirect');
+
+var _IndexRedirect3 = _interopRequireDefault(_IndexRedirect2);
+
+exports.IndexRedirect = _IndexRedirect3['default'];
+
+var _IndexRoute2 = require('./IndexRoute');
+
+var _IndexRoute3 = _interopRequireDefault(_IndexRoute2);
+
+exports.IndexRoute = _IndexRoute3['default'];
+
+var _Redirect2 = require('./Redirect');
+
+var _Redirect3 = _interopRequireDefault(_Redirect2);
+
+exports.Redirect = _Redirect3['default'];
+
+var _Route2 = require('./Route');
+
+var _Route3 = _interopRequireDefault(_Route2);
+
+exports.Route = _Route3['default'];
+
+/* mixins */
+
+var _History2 = require('./History');
+
+var _History3 = _interopRequireDefault(_History2);
+
+exports.History = _History3['default'];
+
+var _Lifecycle2 = require('./Lifecycle');
+
+var _Lifecycle3 = _interopRequireDefault(_Lifecycle2);
+
+exports.Lifecycle = _Lifecycle3['default'];
+
+var _RouteContext2 = require('./RouteContext');
+
+var _RouteContext3 = _interopRequireDefault(_RouteContext2);
+
+exports.RouteContext = _RouteContext3['default'];
+
+/* utils */
+
+var _useRoutes2 = require('./useRoutes');
+
+var _useRoutes3 = _interopRequireDefault(_useRoutes2);
+
+exports.useRoutes = _useRoutes3['default'];
+
+var _RouteUtils = require('./RouteUtils');
+
+exports.createRoutes = _RouteUtils.createRoutes;
+
+var _RouterContext2 = require('./RouterContext');
+
+var _RouterContext3 = _interopRequireDefault(_RouterContext2);
+
+exports.RouterContext = _RouterContext3['default'];
+
+var _RoutingContext2 = require('./RoutingContext');
+
+var _RoutingContext3 = _interopRequireDefault(_RoutingContext2);
+
+exports.RoutingContext = _RoutingContext3['default'];
+
+var _PropTypes2 = require('./PropTypes');
+
+var _PropTypes3 = _interopRequireDefault(_PropTypes2);
+
+exports.PropTypes = _PropTypes3['default'];
+
+var _match2 = require('./match');
+
+var _match3 = _interopRequireDefault(_match2);
+
+exports.match = _match3['default'];
+
+var _useRouterHistory2 = require('./useRouterHistory');
+
+var _useRouterHistory3 = _interopRequireDefault(_useRouterHistory2);
+
+exports.useRouterHistory = _useRouterHistory3['default'];
+
+var _PatternUtils = require('./PatternUtils');
+
+exports.formatPattern = _PatternUtils.formatPattern;
+
+/* histories */
+
+var _browserHistory2 = require('./browserHistory');
+
+var _browserHistory3 = _interopRequireDefault(_browserHistory2);
+
+exports.browserHistory = _browserHistory3['default'];
+
+var _hashHistory2 = require('./hashHistory');
+
+var _hashHistory3 = _interopRequireDefault(_hashHistory2);
+
+exports.hashHistory = _hashHistory3['default'];
+
+var _createMemoryHistory2 = require('./createMemoryHistory');
+
+var _createMemoryHistory3 = _interopRequireDefault(_createMemoryHistory2);
+
+exports.createMemoryHistory = _createMemoryHistory3['default'];
+},{"./History":83,"./IndexLink":84,"./IndexRedirect":85,"./IndexRoute":86,"./Lifecycle":87,"./Link":88,"./PatternUtils":89,"./PropTypes":90,"./Redirect":91,"./Route":92,"./RouteContext":93,"./RouteUtils":94,"./Router":95,"./RouterContext":96,"./RoutingContext":98,"./browserHistory":100,"./createMemoryHistory":102,"./hashHistory":108,"./match":111,"./useRouterHistory":114,"./useRoutes":115}],110:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+exports['default'] = isActive;
+
+var _PatternUtils = require('./PatternUtils');
+
+function deepEqual(a, b) {
+  if (a == b) return true;
+
+  if (a == null || b == null) return false;
+
+  if (Array.isArray(a)) {
+    return Array.isArray(b) && a.length === b.length && a.every(function (item, index) {
+      return deepEqual(item, b[index]);
+    });
+  }
+
+  if (typeof a === 'object') {
+    for (var p in a) {
+      if (!a.hasOwnProperty(p)) {
+        continue;
+      }
+
+      if (a[p] === undefined) {
+        if (b[p] !== undefined) {
+          return false;
+        }
+      } else if (!b.hasOwnProperty(p)) {
+        return false;
+      } else if (!deepEqual(a[p], b[p])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  return String(a) === String(b);
+}
+
+function paramsAreActive(paramNames, paramValues, activeParams) {
+  // FIXME: This doesn't work on repeated params in activeParams.
+  return paramNames.every(function (paramName, index) {
+    return String(paramValues[index]) === String(activeParams[paramName]);
+  });
+}
+
+function getMatchingRouteIndex(pathname, activeRoutes, activeParams) {
+  var remainingPathname = pathname,
+      paramNames = [],
+      paramValues = [];
+
+  for (var i = 0, len = activeRoutes.length; i < len; ++i) {
+    var route = activeRoutes[i];
+    var pattern = route.path || '';
+
+    if (pattern.charAt(0) === '/') {
+      remainingPathname = pathname;
+      paramNames = [];
+      paramValues = [];
+    }
+
+    if (remainingPathname !== null) {
+      var matched = _PatternUtils.matchPattern(pattern, remainingPathname);
+      remainingPathname = matched.remainingPathname;
+      paramNames = [].concat(paramNames, matched.paramNames);
+      paramValues = [].concat(paramValues, matched.paramValues);
+    }
+
+    if (remainingPathname === '' && route.path && paramsAreActive(paramNames, paramValues, activeParams)) return i;
+  }
+
+  return null;
+}
+
+/**
+ * Returns true if the given pathname matches the active routes
+ * and params.
+ */
+function routeIsActive(pathname, routes, params, indexOnly) {
+  var i = getMatchingRouteIndex(pathname, routes, params);
+
+  if (i === null) {
+    // No match.
+    return false;
+  } else if (!indexOnly) {
+    // Any match is good enough.
+    return true;
+  }
+
+  // If any remaining routes past the match index have paths, then we can't
+  // be on the index route.
+  return routes.slice(i + 1).every(function (route) {
+    return !route.path;
+  });
+}
+
+/**
+ * Returns true if all key/value pairs in the given query are
+ * currently active.
+ */
+function queryIsActive(query, activeQuery) {
+  if (activeQuery == null) return query == null;
+
+  if (query == null) return true;
+
+  return deepEqual(query, activeQuery);
+}
+
+/**
+ * Returns true if a <Link> to the given pathname/query combination is
+ * currently active.
+ */
+
+function isActive(_ref, indexOnly, currentLocation, routes, params) {
+  var pathname = _ref.pathname;
+  var query = _ref.query;
+
+  if (currentLocation == null) return false;
+
+  if (!routeIsActive(pathname, routes, params, indexOnly)) return false;
+
+  return queryIsActive(query, currentLocation.query);
+}
+
+module.exports = exports['default'];
+},{"./PatternUtils":89}],111:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _createMemoryHistory = require('./createMemoryHistory');
+
+var _createMemoryHistory2 = _interopRequireDefault(_createMemoryHistory);
+
+var _createTransitionManager = require('./createTransitionManager');
+
+var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
+
+var _RouteUtils = require('./RouteUtils');
+
+var _RouterUtils = require('./RouterUtils');
+
+/**
+ * A high-level API to be used for server-side rendering.
+ *
+ * This function matches a location to a set of routes and calls
+ * callback(error, redirectLocation, renderProps) when finished.
+ *
+ * Note: You probably don't want to use this in a browser unless you're using
+ * server-side rendering with async routes.
+ */
+function match(_ref, callback) {
+  var history = _ref.history;
+  var routes = _ref.routes;
+  var location = _ref.location;
+
+  var options = _objectWithoutProperties(_ref, ['history', 'routes', 'location']);
+
+  !(history || location) ? process.env.NODE_ENV !== 'production' ? _invariant2['default'](false, 'match needs a history or a location') : _invariant2['default'](false) : undefined;
+
+  history = history ? history : _createMemoryHistory2['default'](options);
+  var transitionManager = _createTransitionManager2['default'](history, _RouteUtils.createRoutes(routes));
+
+  var unlisten = undefined;
+
+  if (location) {
+    // Allow match({ location: '/the/path', ... })
+    location = history.createLocation(location);
+  } else {
+    // Pick up the location from the history via synchronous history.listen
+    // call if needed.
+    unlisten = history.listen(function (historyLocation) {
+      location = historyLocation;
+    });
+  }
+
+  var router = _RouterUtils.createRouterObject(history, transitionManager);
+  history = _RouterUtils.createRoutingHistory(history, transitionManager);
+
+  transitionManager.match(location, function (error, redirectLocation, nextState) {
+    callback(error, redirectLocation, nextState && _extends({}, nextState, {
+      history: history,
+      router: router,
+      matchContext: { history: history, transitionManager: transitionManager, router: router }
+    }));
+
+    // Defer removing the listener to here to prevent DOM histories from having
+    // to unwind DOM event listeners unnecessarily, in case callback renders a
+    // <Router> and attaches another history listener.
+    if (unlisten) {
+      unlisten();
+    }
+  });
+}
+
+exports['default'] = match;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./RouteUtils":94,"./RouterUtils":97,"./createMemoryHistory":102,"./createTransitionManager":104,"_process":3,"invariant":116}],112:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+var _AsyncUtils = require('./AsyncUtils');
+
+var _PatternUtils = require('./PatternUtils');
+
+var _RouteUtils = require('./RouteUtils');
+
+function getChildRoutes(route, location, callback) {
+  if (route.childRoutes) {
+    return [null, route.childRoutes];
+  }
+  if (!route.getChildRoutes) {
+    return [];
+  }
+
+  var sync = true,
+      result = undefined;
+
+  route.getChildRoutes(location, function (error, childRoutes) {
+    childRoutes = !error && _RouteUtils.createRoutes(childRoutes);
+    if (sync) {
+      result = [error, childRoutes];
+      return;
+    }
+
+    callback(error, childRoutes);
+  });
+
+  sync = false;
+  return result; // Might be undefined.
+}
+
+function getIndexRoute(route, location, callback) {
+  if (route.indexRoute) {
+    callback(null, route.indexRoute);
+  } else if (route.getIndexRoute) {
+    route.getIndexRoute(location, function (error, indexRoute) {
+      callback(error, !error && _RouteUtils.createRoutes(indexRoute)[0]);
+    });
+  } else if (route.childRoutes) {
+    (function () {
+      var pathless = route.childRoutes.filter(function (obj) {
+        return !obj.hasOwnProperty('path');
+      });
+
+      _AsyncUtils.loopAsync(pathless.length, function (index, next, done) {
+        getIndexRoute(pathless[index], location, function (error, indexRoute) {
+          if (error || indexRoute) {
+            var routes = [pathless[index]].concat(Array.isArray(indexRoute) ? indexRoute : [indexRoute]);
+            done(error, routes);
+          } else {
+            next();
+          }
+        });
+      }, function (err, routes) {
+        callback(null, routes);
+      });
+    })();
+  } else {
+    callback();
+  }
+}
+
+function assignParams(params, paramNames, paramValues) {
+  return paramNames.reduce(function (params, paramName, index) {
+    var paramValue = paramValues && paramValues[index];
+
+    if (Array.isArray(params[paramName])) {
+      params[paramName].push(paramValue);
+    } else if (paramName in params) {
+      params[paramName] = [params[paramName], paramValue];
+    } else {
+      params[paramName] = paramValue;
+    }
+
+    return params;
+  }, params);
+}
+
+function createParams(paramNames, paramValues) {
+  return assignParams({}, paramNames, paramValues);
+}
+
+function matchRouteDeep(route, location, remainingPathname, paramNames, paramValues, callback) {
+  var pattern = route.path || '';
+
+  if (pattern.charAt(0) === '/') {
+    remainingPathname = location.pathname;
+    paramNames = [];
+    paramValues = [];
+  }
+
+  if (remainingPathname !== null) {
+    var matched = _PatternUtils.matchPattern(pattern, remainingPathname);
+    remainingPathname = matched.remainingPathname;
+    paramNames = [].concat(paramNames, matched.paramNames);
+    paramValues = [].concat(paramValues, matched.paramValues);
+
+    if (remainingPathname === '' && route.path) {
+      var _ret2 = (function () {
+        var match = {
+          routes: [route],
+          params: createParams(paramNames, paramValues)
+        };
+
+        getIndexRoute(route, location, function (error, indexRoute) {
+          if (error) {
+            callback(error);
+          } else {
+            if (Array.isArray(indexRoute)) {
+              var _match$routes;
+
+              process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](indexRoute.every(function (route) {
+                return !route.path;
+              }), 'Index routes should not have paths') : undefined;
+              (_match$routes = match.routes).push.apply(_match$routes, indexRoute);
+            } else if (indexRoute) {
+              process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](!indexRoute.path, 'Index routes should not have paths') : undefined;
+              match.routes.push(indexRoute);
+            }
+
+            callback(null, match);
+          }
+        });
+        return {
+          v: undefined
+        };
+      })();
+
+      if (typeof _ret2 === 'object') return _ret2.v;
+    }
+  }
+
+  if (remainingPathname != null || route.childRoutes) {
+    // Either a) this route matched at least some of the path or b)
+    // we don't have to load this route's children asynchronously. In
+    // either case continue checking for matches in the subtree.
+    var onChildRoutes = function onChildRoutes(error, childRoutes) {
+      if (error) {
+        callback(error);
+      } else if (childRoutes) {
+        // Check the child routes to see if any of them match.
+        matchRoutes(childRoutes, location, function (error, match) {
+          if (error) {
+            callback(error);
+          } else if (match) {
+            // A child route matched! Augment the match and pass it up the stack.
+            match.routes.unshift(route);
+            callback(null, match);
+          } else {
+            callback();
+          }
+        }, remainingPathname, paramNames, paramValues);
+      } else {
+        callback();
+      }
+    };
+
+    var result = getChildRoutes(route, location, onChildRoutes);
+    if (result) {
+      onChildRoutes.apply(undefined, result);
+    }
+  } else {
+    callback();
+  }
+}
+
+/**
+ * Asynchronously matches the given location to a set of routes and calls
+ * callback(error, state) when finished. The state object will have the
+ * following properties:
+ *
+ * - routes       An array of routes that matched, in hierarchical order
+ * - params       An object of URL parameters
+ *
+ * Note: This operation may finish synchronously if no routes have an
+ * asynchronous getChildRoutes method.
+ */
+function matchRoutes(routes, location, callback) {
+  var remainingPathname = arguments.length <= 3 || arguments[3] === undefined ? location.pathname : arguments[3];
+  var paramNames = arguments.length <= 4 || arguments[4] === undefined ? [] : arguments[4];
+  var paramValues = arguments.length <= 5 || arguments[5] === undefined ? [] : arguments[5];
+  return (function () {
+    _AsyncUtils.loopAsync(routes.length, function (index, next, done) {
+      matchRouteDeep(routes[index], location, remainingPathname, paramNames, paramValues, function (error, match) {
+        if (error || match) {
+          done(error, match);
+        } else {
+          next();
+        }
+      });
+    }, callback);
+  })();
+}
+
+exports['default'] = matchRoutes;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./AsyncUtils":82,"./PatternUtils":89,"./RouteUtils":94,"./routerWarning":113,"_process":3}],113:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+exports['default'] = routerWarning;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _warning = require('warning');
+
+var _warning2 = _interopRequireDefault(_warning);
+
+function routerWarning(falseToWarn, message) {
+  message = '[react-router] ' + message;
+
+  for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
+    args[_key - 2] = arguments[_key];
+  }
+
+  process.env.NODE_ENV !== 'production' ? _warning2['default'].apply(undefined, [falseToWarn, message].concat(args)) : undefined;
+}
+
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"_process":3,"warning":117}],114:[function(require,module,exports){
+'use strict';
+
+exports.__esModule = true;
+exports['default'] = useRouterHistory;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _historyLibUseQueries = require('history/lib/useQueries');
+
+var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
+
+var _historyLibUseBasename = require('history/lib/useBasename');
+
+var _historyLibUseBasename2 = _interopRequireDefault(_historyLibUseBasename);
+
+function useRouterHistory(createHistory) {
+  return function (options) {
+    var history = _historyLibUseQueries2['default'](_historyLibUseBasename2['default'](createHistory))(options);
+    history.__v2_compatible__ = true;
+    return history;
+  };
+}
+
+module.exports = exports['default'];
+},{"history/lib/useBasename":71,"history/lib/useQueries":72}],115:[function(require,module,exports){
+(function (process){
+'use strict';
+
+exports.__esModule = true;
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+var _historyLibUseQueries = require('history/lib/useQueries');
+
+var _historyLibUseQueries2 = _interopRequireDefault(_historyLibUseQueries);
+
+var _createTransitionManager = require('./createTransitionManager');
+
+var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
+
+var _routerWarning = require('./routerWarning');
+
+var _routerWarning2 = _interopRequireDefault(_routerWarning);
+
+/**
+ * Returns a new createHistory function that may be used to create
+ * history objects that know about routing.
+ *
+ * Enhances history objects with the following methods:
+ *
+ * - listen((error, nextState) => {})
+ * - listenBeforeLeavingRoute(route, (nextLocation) => {})
+ * - match(location, (error, redirectLocation, nextState) => {})
+ * - isActive(pathname, query, indexOnly=false)
+ */
+function useRoutes(createHistory) {
+  process.env.NODE_ENV !== 'production' ? _routerWarning2['default'](false, '`useRoutes` is deprecated. Please use `createTransitionManager` instead.') : undefined;
+
+  return function () {
+    var _ref = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+
+    var routes = _ref.routes;
+
+    var options = _objectWithoutProperties(_ref, ['routes']);
+
+    var history = _historyLibUseQueries2['default'](createHistory)(options);
+    var transitionManager = _createTransitionManager2['default'](history, routes);
+    return _extends({}, history, transitionManager);
+  };
+}
+
+exports['default'] = useRoutes;
+module.exports = exports['default'];
+}).call(this,require('_process'))
+
+},{"./createTransitionManager":104,"./routerWarning":113,"_process":3,"history/lib/useQueries":72}],116:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright 2013-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+'use strict';
+
+/**
+ * Use invariant() to assert state which your program assumes to be true.
+ *
+ * Provide sprintf-style format (only %s is supported) and arguments
+ * to provide information about what broke and what you were
+ * expecting.
+ *
+ * The invariant message will be stripped in production, but the invariant
+ * will remain to ensure logic does not differ in production.
+ */
+
+var invariant = function(condition, format, a, b, c, d, e, f) {
+  if (process.env.NODE_ENV !== 'production') {
+    if (format === undefined) {
+      throw new Error('invariant requires an error message argument');
+    }
+  }
+
+  if (!condition) {
+    var error;
+    if (format === undefined) {
+      error = new Error(
+        'Minified exception occurred; use the non-minified dev environment ' +
+        'for the full error message and additional helpful warnings.'
+      );
+    } else {
+      var args = [a, b, c, d, e, f];
+      var argIndex = 0;
+      error = new Error(
+        format.replace(/%s/g, function() { return args[argIndex++]; })
+      );
+      error.name = 'Invariant Violation';
+    }
+
+    error.framesToPop = 1; // we don't care about invariant's own frame
+    throw error;
+  }
+};
+
+module.exports = invariant;
+
+}).call(this,require('_process'))
+
+},{"_process":3}],117:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright 2014-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+'use strict';
+
+/**
+ * Similar to invariant but only logs a warning if the condition is not met.
+ * This can be used to log issues in development environments in critical
+ * paths. Removing the logging code for production environments will keep the
+ * same logic and follow the same code paths.
+ */
+
+var warning = function() {};
+
+if (process.env.NODE_ENV !== 'production') {
+  warning = function(condition, format, args) {
+    var len = arguments.length;
+    args = new Array(len > 2 ? len - 2 : 0);
+    for (var key = 2; key < len; key++) {
+      args[key - 2] = arguments[key];
+    }
+    if (format === undefined) {
+      throw new Error(
+        '`warning(condition, format, ...args)` requires a warning ' +
+        'message argument'
+      );
+    }
+
+    if (format.length < 10 || (/^[s\W]*$/).test(format)) {
+      throw new Error(
+        'The warning format should be able to uniquely identify this ' +
+        'warning. Please, use a more descriptive format than: ' + format
+      );
+    }
+
+    if (!condition) {
+      var argIndex = 0;
+      var message = 'Warning: ' +
+        format.replace(/%s/g, function() {
+          return args[argIndex++];
+        });
+      if (typeof console !== 'undefined') {
+        console.error(message);
+      }
+      try {
+        // This error was thrown as a convenience so that you can use this stack
+        // to find the callsite that caused this warning to fire.
+        throw new Error(message);
+      } catch(x) {}
+    }
+  };
+}
+
+module.exports = warning;
+
+}).call(this,require('_process'))
+
+},{"_process":3}],118:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -5624,7 +12294,7 @@ var AutoFocusUtils = {
 };
 
 module.exports = AutoFocusUtils;
-},{"./ReactMount":130,"./findDOMNode":173,"fbjs/lib/focusNode":203}],67:[function(require,module,exports){
+},{"./ReactMount":182,"./findDOMNode":225,"fbjs/lib/focusNode":255}],119:[function(require,module,exports){
 /**
  * Copyright 2013-2015 Facebook, Inc.
  * All rights reserved.
@@ -6030,7 +12700,7 @@ var BeforeInputEventPlugin = {
 };
 
 module.exports = BeforeInputEventPlugin;
-},{"./EventConstants":79,"./EventPropagators":83,"./FallbackCompositionState":84,"./SyntheticCompositionEvent":155,"./SyntheticInputEvent":159,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/keyOf":213}],68:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPropagators":135,"./FallbackCompositionState":136,"./SyntheticCompositionEvent":207,"./SyntheticInputEvent":211,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/keyOf":265}],120:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -6170,7 +12840,7 @@ var CSSProperty = {
 };
 
 module.exports = CSSProperty;
-},{}],69:[function(require,module,exports){
+},{}],121:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -6349,7 +13019,7 @@ ReactPerf.measureMethods(CSSPropertyOperations, 'CSSPropertyOperations', {
 module.exports = CSSPropertyOperations;
 }).call(this,require('_process'))
 
-},{"./CSSProperty":68,"./ReactPerf":136,"./dangerousStyleValue":170,"_process":3,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/camelizeStyleName":197,"fbjs/lib/hyphenateStyleName":208,"fbjs/lib/memoizeStringOnly":215,"fbjs/lib/warning":220}],70:[function(require,module,exports){
+},{"./CSSProperty":120,"./ReactPerf":188,"./dangerousStyleValue":222,"_process":3,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/camelizeStyleName":249,"fbjs/lib/hyphenateStyleName":260,"fbjs/lib/memoizeStringOnly":267,"fbjs/lib/warning":272}],122:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -6446,7 +13116,7 @@ PooledClass.addPoolingTo(CallbackQueue);
 module.exports = CallbackQueue;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./PooledClass":88,"_process":3,"fbjs/lib/invariant":209}],71:[function(require,module,exports){
+},{"./Object.assign":139,"./PooledClass":140,"_process":3,"fbjs/lib/invariant":261}],123:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -6768,7 +13438,7 @@ var ChangeEventPlugin = {
 };
 
 module.exports = ChangeEventPlugin;
-},{"./EventConstants":79,"./EventPluginHub":80,"./EventPropagators":83,"./ReactUpdates":148,"./SyntheticEvent":157,"./getEventTarget":179,"./isEventSupported":184,"./isTextInputElement":185,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/keyOf":213}],72:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPluginHub":132,"./EventPropagators":135,"./ReactUpdates":200,"./SyntheticEvent":209,"./getEventTarget":231,"./isEventSupported":236,"./isTextInputElement":237,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/keyOf":265}],124:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -6792,7 +13462,7 @@ var ClientReactRootIndex = {
 };
 
 module.exports = ClientReactRootIndex;
-},{}],73:[function(require,module,exports){
+},{}],125:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -6925,7 +13595,7 @@ ReactPerf.measureMethods(DOMChildrenOperations, 'DOMChildrenOperations', {
 module.exports = DOMChildrenOperations;
 }).call(this,require('_process'))
 
-},{"./Danger":76,"./ReactMultiChildUpdateTypes":132,"./ReactPerf":136,"./setInnerHTML":189,"./setTextContent":190,"_process":3,"fbjs/lib/invariant":209}],74:[function(require,module,exports){
+},{"./Danger":128,"./ReactMultiChildUpdateTypes":184,"./ReactPerf":188,"./setInnerHTML":241,"./setTextContent":242,"_process":3,"fbjs/lib/invariant":261}],126:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7163,7 +13833,7 @@ var DOMProperty = {
 module.exports = DOMProperty;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],75:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],127:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7392,7 +14062,7 @@ ReactPerf.measureMethods(DOMPropertyOperations, 'DOMPropertyOperations', {
 module.exports = DOMPropertyOperations;
 }).call(this,require('_process'))
 
-},{"./DOMProperty":74,"./ReactPerf":136,"./quoteAttributeValueForBrowser":187,"_process":3,"fbjs/lib/warning":220}],76:[function(require,module,exports){
+},{"./DOMProperty":126,"./ReactPerf":188,"./quoteAttributeValueForBrowser":239,"_process":3,"fbjs/lib/warning":272}],128:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7541,7 +14211,7 @@ var Danger = {
 module.exports = Danger;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/createNodesFromMarkup":200,"fbjs/lib/emptyFunction":201,"fbjs/lib/getMarkupWrap":205,"fbjs/lib/invariant":209}],77:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/createNodesFromMarkup":252,"fbjs/lib/emptyFunction":253,"fbjs/lib/getMarkupWrap":257,"fbjs/lib/invariant":261}],129:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -7569,7 +14239,7 @@ var keyOf = require('fbjs/lib/keyOf');
 var DefaultEventPluginOrder = [keyOf({ ResponderEventPlugin: null }), keyOf({ SimpleEventPlugin: null }), keyOf({ TapEventPlugin: null }), keyOf({ EnterLeaveEventPlugin: null }), keyOf({ ChangeEventPlugin: null }), keyOf({ SelectEventPlugin: null }), keyOf({ BeforeInputEventPlugin: null })];
 
 module.exports = DefaultEventPluginOrder;
-},{"fbjs/lib/keyOf":213}],78:[function(require,module,exports){
+},{"fbjs/lib/keyOf":265}],130:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -7694,7 +14364,7 @@ var EnterLeaveEventPlugin = {
 };
 
 module.exports = EnterLeaveEventPlugin;
-},{"./EventConstants":79,"./EventPropagators":83,"./ReactMount":130,"./SyntheticMouseEvent":161,"fbjs/lib/keyOf":213}],79:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPropagators":135,"./ReactMount":182,"./SyntheticMouseEvent":213,"fbjs/lib/keyOf":265}],131:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -7787,7 +14457,7 @@ var EventConstants = {
 };
 
 module.exports = EventConstants;
-},{"fbjs/lib/keyMirror":212}],80:[function(require,module,exports){
+},{"fbjs/lib/keyMirror":264}],132:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8070,7 +14740,7 @@ var EventPluginHub = {
 module.exports = EventPluginHub;
 }).call(this,require('_process'))
 
-},{"./EventPluginRegistry":81,"./EventPluginUtils":82,"./ReactErrorUtils":121,"./accumulateInto":167,"./forEachAccumulated":175,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],81:[function(require,module,exports){
+},{"./EventPluginRegistry":133,"./EventPluginUtils":134,"./ReactErrorUtils":173,"./accumulateInto":219,"./forEachAccumulated":227,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],133:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8294,7 +14964,7 @@ var EventPluginRegistry = {
 module.exports = EventPluginRegistry;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],82:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],134:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8500,7 +15170,7 @@ var EventPluginUtils = {
 module.exports = EventPluginUtils;
 }).call(this,require('_process'))
 
-},{"./EventConstants":79,"./ReactErrorUtils":121,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],83:[function(require,module,exports){
+},{"./EventConstants":131,"./ReactErrorUtils":173,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],135:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8639,7 +15309,7 @@ var EventPropagators = {
 module.exports = EventPropagators;
 }).call(this,require('_process'))
 
-},{"./EventConstants":79,"./EventPluginHub":80,"./accumulateInto":167,"./forEachAccumulated":175,"_process":3,"fbjs/lib/warning":220}],84:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPluginHub":132,"./accumulateInto":219,"./forEachAccumulated":227,"_process":3,"fbjs/lib/warning":272}],136:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -8735,7 +15405,7 @@ assign(FallbackCompositionState.prototype, {
 PooledClass.addPoolingTo(FallbackCompositionState);
 
 module.exports = FallbackCompositionState;
-},{"./Object.assign":87,"./PooledClass":88,"./getTextContentAccessor":182}],85:[function(require,module,exports){
+},{"./Object.assign":139,"./PooledClass":140,"./getTextContentAccessor":234}],137:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -8966,7 +15636,7 @@ var HTMLDOMPropertyConfig = {
 };
 
 module.exports = HTMLDOMPropertyConfig;
-},{"./DOMProperty":74,"fbjs/lib/ExecutionEnvironment":195}],86:[function(require,module,exports){
+},{"./DOMProperty":126,"fbjs/lib/ExecutionEnvironment":247}],138:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -9104,7 +15774,7 @@ var LinkedValueUtils = {
 module.exports = LinkedValueUtils;
 }).call(this,require('_process'))
 
-},{"./ReactPropTypeLocations":138,"./ReactPropTypes":139,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],87:[function(require,module,exports){
+},{"./ReactPropTypeLocations":190,"./ReactPropTypes":191,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],139:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -9152,7 +15822,7 @@ function assign(target, sources) {
 }
 
 module.exports = assign;
-},{}],88:[function(require,module,exports){
+},{}],140:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -9275,7 +15945,7 @@ var PooledClass = {
 module.exports = PooledClass;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],89:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],141:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -9316,7 +15986,7 @@ React.__SECRET_DOM_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactDOM;
 React.__SECRET_DOM_SERVER_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactDOMServer;
 
 module.exports = React;
-},{"./Object.assign":87,"./ReactDOM":100,"./ReactDOMServer":110,"./ReactIsomorphic":128,"./deprecated":171}],90:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactDOM":152,"./ReactDOMServer":162,"./ReactIsomorphic":180,"./deprecated":223}],142:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -9356,7 +16026,7 @@ var ReactBrowserComponentMixin = {
 module.exports = ReactBrowserComponentMixin;
 }).call(this,require('_process'))
 
-},{"./ReactInstanceMap":127,"./findDOMNode":173,"_process":3,"fbjs/lib/warning":220}],91:[function(require,module,exports){
+},{"./ReactInstanceMap":179,"./findDOMNode":225,"_process":3,"fbjs/lib/warning":272}],143:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -9681,7 +16351,7 @@ ReactPerf.measureMethods(ReactBrowserEventEmitter, 'ReactBrowserEventEmitter', {
 });
 
 module.exports = ReactBrowserEventEmitter;
-},{"./EventConstants":79,"./EventPluginHub":80,"./EventPluginRegistry":81,"./Object.assign":87,"./ReactEventEmitterMixin":122,"./ReactPerf":136,"./ViewportMetrics":166,"./isEventSupported":184}],92:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPluginHub":132,"./EventPluginRegistry":133,"./Object.assign":139,"./ReactEventEmitterMixin":174,"./ReactPerf":188,"./ViewportMetrics":218,"./isEventSupported":236}],144:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -9807,7 +16477,7 @@ var ReactChildReconciler = {
 module.exports = ReactChildReconciler;
 }).call(this,require('_process'))
 
-},{"./ReactReconciler":141,"./instantiateReactComponent":183,"./shouldUpdateReactComponent":191,"./traverseAllChildren":192,"_process":3,"fbjs/lib/warning":220}],93:[function(require,module,exports){
+},{"./ReactReconciler":193,"./instantiateReactComponent":235,"./shouldUpdateReactComponent":243,"./traverseAllChildren":244,"_process":3,"fbjs/lib/warning":272}],145:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -9990,7 +16660,7 @@ var ReactChildren = {
 };
 
 module.exports = ReactChildren;
-},{"./PooledClass":88,"./ReactElement":117,"./traverseAllChildren":192,"fbjs/lib/emptyFunction":201}],94:[function(require,module,exports){
+},{"./PooledClass":140,"./ReactElement":169,"./traverseAllChildren":244,"fbjs/lib/emptyFunction":253}],146:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -10765,7 +17435,7 @@ var ReactClass = {
 module.exports = ReactClass;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactComponent":95,"./ReactElement":117,"./ReactNoopUpdateQueue":134,"./ReactPropTypeLocationNames":137,"./ReactPropTypeLocations":138,"_process":3,"fbjs/lib/emptyObject":202,"fbjs/lib/invariant":209,"fbjs/lib/keyMirror":212,"fbjs/lib/keyOf":213,"fbjs/lib/warning":220}],95:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactComponent":147,"./ReactElement":169,"./ReactNoopUpdateQueue":186,"./ReactPropTypeLocationNames":189,"./ReactPropTypeLocations":190,"_process":3,"fbjs/lib/emptyObject":254,"fbjs/lib/invariant":261,"fbjs/lib/keyMirror":264,"fbjs/lib/keyOf":265,"fbjs/lib/warning":272}],147:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -10891,7 +17561,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = ReactComponent;
 }).call(this,require('_process'))
 
-},{"./ReactNoopUpdateQueue":134,"./canDefineProperty":169,"_process":3,"fbjs/lib/emptyObject":202,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],96:[function(require,module,exports){
+},{"./ReactNoopUpdateQueue":186,"./canDefineProperty":221,"_process":3,"fbjs/lib/emptyObject":254,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],148:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -10933,7 +17603,7 @@ var ReactComponentBrowserEnvironment = {
 };
 
 module.exports = ReactComponentBrowserEnvironment;
-},{"./ReactDOMIDOperations":105,"./ReactMount":130}],97:[function(require,module,exports){
+},{"./ReactDOMIDOperations":157,"./ReactMount":182}],149:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -10988,7 +17658,7 @@ var ReactComponentEnvironment = {
 module.exports = ReactComponentEnvironment;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],98:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],150:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -11686,7 +18356,7 @@ var ReactCompositeComponent = {
 module.exports = ReactCompositeComponent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactComponentEnvironment":97,"./ReactCurrentOwner":99,"./ReactElement":117,"./ReactInstanceMap":127,"./ReactPerf":136,"./ReactPropTypeLocationNames":137,"./ReactPropTypeLocations":138,"./ReactReconciler":141,"./ReactUpdateQueue":147,"./shouldUpdateReactComponent":191,"_process":3,"fbjs/lib/emptyObject":202,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],99:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactComponentEnvironment":149,"./ReactCurrentOwner":151,"./ReactElement":169,"./ReactInstanceMap":179,"./ReactPerf":188,"./ReactPropTypeLocationNames":189,"./ReactPropTypeLocations":190,"./ReactReconciler":193,"./ReactUpdateQueue":199,"./shouldUpdateReactComponent":243,"_process":3,"fbjs/lib/emptyObject":254,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],151:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -11717,7 +18387,7 @@ var ReactCurrentOwner = {
 };
 
 module.exports = ReactCurrentOwner;
-},{}],100:[function(require,module,exports){
+},{}],152:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -11813,7 +18483,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = React;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":99,"./ReactDOMTextComponent":111,"./ReactDefaultInjection":114,"./ReactInstanceHandles":126,"./ReactMount":130,"./ReactPerf":136,"./ReactReconciler":141,"./ReactUpdates":148,"./ReactVersion":149,"./findDOMNode":173,"./renderSubtreeIntoContainer":188,"_process":3,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/warning":220}],101:[function(require,module,exports){
+},{"./ReactCurrentOwner":151,"./ReactDOMTextComponent":163,"./ReactDefaultInjection":166,"./ReactInstanceHandles":178,"./ReactMount":182,"./ReactPerf":188,"./ReactReconciler":193,"./ReactUpdates":200,"./ReactVersion":201,"./findDOMNode":225,"./renderSubtreeIntoContainer":240,"_process":3,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/warning":272}],153:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -11864,7 +18534,7 @@ var ReactDOMButton = {
 };
 
 module.exports = ReactDOMButton;
-},{}],102:[function(require,module,exports){
+},{}],154:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -12830,7 +19500,7 @@ assign(ReactDOMComponent.prototype, ReactDOMComponent.Mixin, ReactMultiChild.Mix
 module.exports = ReactDOMComponent;
 }).call(this,require('_process'))
 
-},{"./AutoFocusUtils":66,"./CSSPropertyOperations":69,"./DOMProperty":74,"./DOMPropertyOperations":75,"./EventConstants":79,"./Object.assign":87,"./ReactBrowserEventEmitter":91,"./ReactComponentBrowserEnvironment":96,"./ReactDOMButton":101,"./ReactDOMInput":106,"./ReactDOMOption":107,"./ReactDOMSelect":108,"./ReactDOMTextarea":112,"./ReactMount":130,"./ReactMultiChild":131,"./ReactPerf":136,"./ReactUpdateQueue":147,"./canDefineProperty":169,"./escapeTextContentForBrowser":172,"./isEventSupported":184,"./setInnerHTML":189,"./setTextContent":190,"./validateDOMNesting":193,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/keyOf":213,"fbjs/lib/shallowEqual":218,"fbjs/lib/warning":220}],103:[function(require,module,exports){
+},{"./AutoFocusUtils":118,"./CSSPropertyOperations":121,"./DOMProperty":126,"./DOMPropertyOperations":127,"./EventConstants":131,"./Object.assign":139,"./ReactBrowserEventEmitter":143,"./ReactComponentBrowserEnvironment":148,"./ReactDOMButton":153,"./ReactDOMInput":158,"./ReactDOMOption":159,"./ReactDOMSelect":160,"./ReactDOMTextarea":164,"./ReactMount":182,"./ReactMultiChild":183,"./ReactPerf":188,"./ReactUpdateQueue":199,"./canDefineProperty":221,"./escapeTextContentForBrowser":224,"./isEventSupported":236,"./setInnerHTML":241,"./setTextContent":242,"./validateDOMNesting":245,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/keyOf":265,"fbjs/lib/shallowEqual":270,"fbjs/lib/warning":272}],155:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13011,7 +19681,7 @@ var ReactDOMFactories = mapObject({
 module.exports = ReactDOMFactories;
 }).call(this,require('_process'))
 
-},{"./ReactElement":117,"./ReactElementValidator":118,"_process":3,"fbjs/lib/mapObject":214}],104:[function(require,module,exports){
+},{"./ReactElement":169,"./ReactElementValidator":170,"_process":3,"fbjs/lib/mapObject":266}],156:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13030,7 +19700,7 @@ var ReactDOMFeatureFlags = {
 };
 
 module.exports = ReactDOMFeatureFlags;
-},{}],105:[function(require,module,exports){
+},{}],157:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13128,7 +19798,7 @@ ReactPerf.measureMethods(ReactDOMIDOperations, 'ReactDOMIDOperations', {
 module.exports = ReactDOMIDOperations;
 }).call(this,require('_process'))
 
-},{"./DOMChildrenOperations":73,"./DOMPropertyOperations":75,"./ReactMount":130,"./ReactPerf":136,"_process":3,"fbjs/lib/invariant":209}],106:[function(require,module,exports){
+},{"./DOMChildrenOperations":125,"./DOMPropertyOperations":127,"./ReactMount":182,"./ReactPerf":188,"_process":3,"fbjs/lib/invariant":261}],158:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13285,7 +19955,7 @@ function _handleChange(event) {
 module.exports = ReactDOMInput;
 }).call(this,require('_process'))
 
-},{"./LinkedValueUtils":86,"./Object.assign":87,"./ReactDOMIDOperations":105,"./ReactMount":130,"./ReactUpdates":148,"_process":3,"fbjs/lib/invariant":209}],107:[function(require,module,exports){
+},{"./LinkedValueUtils":138,"./Object.assign":139,"./ReactDOMIDOperations":157,"./ReactMount":182,"./ReactUpdates":200,"_process":3,"fbjs/lib/invariant":261}],159:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13378,7 +20048,7 @@ var ReactDOMOption = {
 module.exports = ReactDOMOption;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactChildren":93,"./ReactDOMSelect":108,"_process":3,"fbjs/lib/warning":220}],108:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactChildren":145,"./ReactDOMSelect":160,"_process":3,"fbjs/lib/warning":272}],160:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13570,7 +20240,7 @@ function _handleChange(event) {
 module.exports = ReactDOMSelect;
 }).call(this,require('_process'))
 
-},{"./LinkedValueUtils":86,"./Object.assign":87,"./ReactMount":130,"./ReactUpdates":148,"_process":3,"fbjs/lib/warning":220}],109:[function(require,module,exports){
+},{"./LinkedValueUtils":138,"./Object.assign":139,"./ReactMount":182,"./ReactUpdates":200,"_process":3,"fbjs/lib/warning":272}],161:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13783,7 +20453,7 @@ var ReactDOMSelection = {
 };
 
 module.exports = ReactDOMSelection;
-},{"./getNodeForCharacterOffset":181,"./getTextContentAccessor":182,"fbjs/lib/ExecutionEnvironment":195}],110:[function(require,module,exports){
+},{"./getNodeForCharacterOffset":233,"./getTextContentAccessor":234,"fbjs/lib/ExecutionEnvironment":247}],162:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13810,7 +20480,7 @@ var ReactDOMServer = {
 };
 
 module.exports = ReactDOMServer;
-},{"./ReactDefaultInjection":114,"./ReactServerRendering":145,"./ReactVersion":149}],111:[function(require,module,exports){
+},{"./ReactDefaultInjection":166,"./ReactServerRendering":197,"./ReactVersion":201}],163:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13941,7 +20611,7 @@ assign(ReactDOMTextComponent.prototype, {
 module.exports = ReactDOMTextComponent;
 }).call(this,require('_process'))
 
-},{"./DOMChildrenOperations":73,"./DOMPropertyOperations":75,"./Object.assign":87,"./ReactComponentBrowserEnvironment":96,"./ReactMount":130,"./escapeTextContentForBrowser":172,"./setTextContent":190,"./validateDOMNesting":193,"_process":3}],112:[function(require,module,exports){
+},{"./DOMChildrenOperations":125,"./DOMPropertyOperations":127,"./Object.assign":139,"./ReactComponentBrowserEnvironment":148,"./ReactMount":182,"./escapeTextContentForBrowser":224,"./setTextContent":242,"./validateDOMNesting":245,"_process":3}],164:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -14058,7 +20728,7 @@ function _handleChange(event) {
 module.exports = ReactDOMTextarea;
 }).call(this,require('_process'))
 
-},{"./LinkedValueUtils":86,"./Object.assign":87,"./ReactDOMIDOperations":105,"./ReactUpdates":148,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],113:[function(require,module,exports){
+},{"./LinkedValueUtils":138,"./Object.assign":139,"./ReactDOMIDOperations":157,"./ReactUpdates":200,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],165:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14126,7 +20796,7 @@ var ReactDefaultBatchingStrategy = {
 };
 
 module.exports = ReactDefaultBatchingStrategy;
-},{"./Object.assign":87,"./ReactUpdates":148,"./Transaction":165,"fbjs/lib/emptyFunction":201}],114:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactUpdates":200,"./Transaction":217,"fbjs/lib/emptyFunction":253}],166:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -14227,7 +20897,7 @@ module.exports = {
 };
 }).call(this,require('_process'))
 
-},{"./BeforeInputEventPlugin":67,"./ChangeEventPlugin":71,"./ClientReactRootIndex":72,"./DefaultEventPluginOrder":77,"./EnterLeaveEventPlugin":78,"./HTMLDOMPropertyConfig":85,"./ReactBrowserComponentMixin":90,"./ReactComponentBrowserEnvironment":96,"./ReactDOMComponent":102,"./ReactDOMTextComponent":111,"./ReactDefaultBatchingStrategy":113,"./ReactDefaultPerf":115,"./ReactEventListener":123,"./ReactInjection":124,"./ReactInstanceHandles":126,"./ReactMount":130,"./ReactReconcileTransaction":140,"./SVGDOMPropertyConfig":150,"./SelectEventPlugin":151,"./ServerReactRootIndex":152,"./SimpleEventPlugin":153,"_process":3,"fbjs/lib/ExecutionEnvironment":195}],115:[function(require,module,exports){
+},{"./BeforeInputEventPlugin":119,"./ChangeEventPlugin":123,"./ClientReactRootIndex":124,"./DefaultEventPluginOrder":129,"./EnterLeaveEventPlugin":130,"./HTMLDOMPropertyConfig":137,"./ReactBrowserComponentMixin":142,"./ReactComponentBrowserEnvironment":148,"./ReactDOMComponent":154,"./ReactDOMTextComponent":163,"./ReactDefaultBatchingStrategy":165,"./ReactDefaultPerf":167,"./ReactEventListener":175,"./ReactInjection":176,"./ReactInstanceHandles":178,"./ReactMount":182,"./ReactReconcileTransaction":192,"./SVGDOMPropertyConfig":202,"./SelectEventPlugin":203,"./ServerReactRootIndex":204,"./SimpleEventPlugin":205,"_process":3,"fbjs/lib/ExecutionEnvironment":247}],167:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14465,7 +21135,7 @@ var ReactDefaultPerf = {
 };
 
 module.exports = ReactDefaultPerf;
-},{"./DOMProperty":74,"./ReactDefaultPerfAnalysis":116,"./ReactMount":130,"./ReactPerf":136,"fbjs/lib/performanceNow":217}],116:[function(require,module,exports){
+},{"./DOMProperty":126,"./ReactDefaultPerfAnalysis":168,"./ReactMount":182,"./ReactPerf":188,"fbjs/lib/performanceNow":269}],168:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14667,7 +21337,7 @@ var ReactDefaultPerfAnalysis = {
 };
 
 module.exports = ReactDefaultPerfAnalysis;
-},{"./Object.assign":87}],117:[function(require,module,exports){
+},{"./Object.assign":139}],169:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -14918,7 +21588,7 @@ ReactElement.isValidElement = function (object) {
 module.exports = ReactElement;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactCurrentOwner":99,"./canDefineProperty":169,"_process":3}],118:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactCurrentOwner":151,"./canDefineProperty":221,"_process":3}],170:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -15203,7 +21873,7 @@ var ReactElementValidator = {
 module.exports = ReactElementValidator;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":99,"./ReactElement":117,"./ReactPropTypeLocationNames":137,"./ReactPropTypeLocations":138,"./canDefineProperty":169,"./getIteratorFn":180,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],119:[function(require,module,exports){
+},{"./ReactCurrentOwner":151,"./ReactElement":169,"./ReactPropTypeLocationNames":189,"./ReactPropTypeLocations":190,"./canDefineProperty":221,"./getIteratorFn":232,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],171:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -15255,7 +21925,7 @@ assign(ReactEmptyComponent.prototype, {
 ReactEmptyComponent.injection = ReactEmptyComponentInjection;
 
 module.exports = ReactEmptyComponent;
-},{"./Object.assign":87,"./ReactElement":117,"./ReactEmptyComponentRegistry":120,"./ReactReconciler":141}],120:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactElement":169,"./ReactEmptyComponentRegistry":172,"./ReactReconciler":193}],172:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -15304,7 +21974,7 @@ var ReactEmptyComponentRegistry = {
 };
 
 module.exports = ReactEmptyComponentRegistry;
-},{}],121:[function(require,module,exports){
+},{}],173:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -15385,7 +22055,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = ReactErrorUtils;
 }).call(this,require('_process'))
 
-},{"_process":3}],122:[function(require,module,exports){
+},{"_process":3}],174:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15424,7 +22094,7 @@ var ReactEventEmitterMixin = {
 };
 
 module.exports = ReactEventEmitterMixin;
-},{"./EventPluginHub":80}],123:[function(require,module,exports){
+},{"./EventPluginHub":132}],175:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15636,7 +22306,7 @@ var ReactEventListener = {
 };
 
 module.exports = ReactEventListener;
-},{"./Object.assign":87,"./PooledClass":88,"./ReactInstanceHandles":126,"./ReactMount":130,"./ReactUpdates":148,"./getEventTarget":179,"fbjs/lib/EventListener":194,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/getUnboundedScrollPosition":206}],124:[function(require,module,exports){
+},{"./Object.assign":139,"./PooledClass":140,"./ReactInstanceHandles":178,"./ReactMount":182,"./ReactUpdates":200,"./getEventTarget":231,"fbjs/lib/EventListener":246,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/getUnboundedScrollPosition":258}],176:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15675,7 +22345,7 @@ var ReactInjection = {
 };
 
 module.exports = ReactInjection;
-},{"./DOMProperty":74,"./EventPluginHub":80,"./ReactBrowserEventEmitter":91,"./ReactClass":94,"./ReactComponentEnvironment":97,"./ReactEmptyComponent":119,"./ReactNativeComponent":133,"./ReactPerf":136,"./ReactRootIndex":143,"./ReactUpdates":148}],125:[function(require,module,exports){
+},{"./DOMProperty":126,"./EventPluginHub":132,"./ReactBrowserEventEmitter":143,"./ReactClass":146,"./ReactComponentEnvironment":149,"./ReactEmptyComponent":171,"./ReactNativeComponent":185,"./ReactPerf":188,"./ReactRootIndex":195,"./ReactUpdates":200}],177:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15800,7 +22470,7 @@ var ReactInputSelection = {
 };
 
 module.exports = ReactInputSelection;
-},{"./ReactDOMSelection":109,"fbjs/lib/containsNode":198,"fbjs/lib/focusNode":203,"fbjs/lib/getActiveElement":204}],126:[function(require,module,exports){
+},{"./ReactDOMSelection":161,"fbjs/lib/containsNode":250,"fbjs/lib/focusNode":255,"fbjs/lib/getActiveElement":256}],178:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16106,7 +22776,7 @@ var ReactInstanceHandles = {
 module.exports = ReactInstanceHandles;
 }).call(this,require('_process'))
 
-},{"./ReactRootIndex":143,"_process":3,"fbjs/lib/invariant":209}],127:[function(require,module,exports){
+},{"./ReactRootIndex":195,"_process":3,"fbjs/lib/invariant":261}],179:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16154,7 +22824,7 @@ var ReactInstanceMap = {
 };
 
 module.exports = ReactInstanceMap;
-},{}],128:[function(require,module,exports){
+},{}],180:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16232,7 +22902,7 @@ var React = {
 module.exports = React;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactChildren":93,"./ReactClass":94,"./ReactComponent":95,"./ReactDOMFactories":103,"./ReactElement":117,"./ReactElementValidator":118,"./ReactPropTypes":139,"./ReactVersion":149,"./onlyChild":186,"_process":3}],129:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactChildren":145,"./ReactClass":146,"./ReactComponent":147,"./ReactDOMFactories":155,"./ReactElement":169,"./ReactElementValidator":170,"./ReactPropTypes":191,"./ReactVersion":201,"./onlyChild":238,"_process":3}],181:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16278,7 +22948,7 @@ var ReactMarkupChecksum = {
 };
 
 module.exports = ReactMarkupChecksum;
-},{"./adler32":168}],130:[function(require,module,exports){
+},{"./adler32":220}],182:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -17132,7 +23802,7 @@ ReactPerf.measureMethods(ReactMount, 'ReactMount', {
 module.exports = ReactMount;
 }).call(this,require('_process'))
 
-},{"./DOMProperty":74,"./Object.assign":87,"./ReactBrowserEventEmitter":91,"./ReactCurrentOwner":99,"./ReactDOMFeatureFlags":104,"./ReactElement":117,"./ReactEmptyComponentRegistry":120,"./ReactInstanceHandles":126,"./ReactInstanceMap":127,"./ReactMarkupChecksum":129,"./ReactPerf":136,"./ReactReconciler":141,"./ReactUpdateQueue":147,"./ReactUpdates":148,"./instantiateReactComponent":183,"./setInnerHTML":189,"./shouldUpdateReactComponent":191,"./validateDOMNesting":193,"_process":3,"fbjs/lib/containsNode":198,"fbjs/lib/emptyObject":202,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],131:[function(require,module,exports){
+},{"./DOMProperty":126,"./Object.assign":139,"./ReactBrowserEventEmitter":143,"./ReactCurrentOwner":151,"./ReactDOMFeatureFlags":156,"./ReactElement":169,"./ReactEmptyComponentRegistry":172,"./ReactInstanceHandles":178,"./ReactInstanceMap":179,"./ReactMarkupChecksum":181,"./ReactPerf":188,"./ReactReconciler":193,"./ReactUpdateQueue":199,"./ReactUpdates":200,"./instantiateReactComponent":235,"./setInnerHTML":241,"./shouldUpdateReactComponent":243,"./validateDOMNesting":245,"_process":3,"fbjs/lib/containsNode":250,"fbjs/lib/emptyObject":254,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],183:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -17632,7 +24302,7 @@ var ReactMultiChild = {
 module.exports = ReactMultiChild;
 }).call(this,require('_process'))
 
-},{"./ReactChildReconciler":92,"./ReactComponentEnvironment":97,"./ReactCurrentOwner":99,"./ReactMultiChildUpdateTypes":132,"./ReactReconciler":141,"./flattenChildren":174,"_process":3}],132:[function(require,module,exports){
+},{"./ReactChildReconciler":144,"./ReactComponentEnvironment":149,"./ReactCurrentOwner":151,"./ReactMultiChildUpdateTypes":184,"./ReactReconciler":193,"./flattenChildren":226,"_process":3}],184:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17665,7 +24335,7 @@ var ReactMultiChildUpdateTypes = keyMirror({
 });
 
 module.exports = ReactMultiChildUpdateTypes;
-},{"fbjs/lib/keyMirror":212}],133:[function(require,module,exports){
+},{"fbjs/lib/keyMirror":264}],185:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -17763,7 +24433,7 @@ var ReactNativeComponent = {
 module.exports = ReactNativeComponent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"_process":3,"fbjs/lib/invariant":209}],134:[function(require,module,exports){
+},{"./Object.assign":139,"_process":3,"fbjs/lib/invariant":261}],186:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2015, Facebook, Inc.
@@ -17885,7 +24555,7 @@ var ReactNoopUpdateQueue = {
 module.exports = ReactNoopUpdateQueue;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/warning":220}],135:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/warning":272}],187:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -17980,7 +24650,7 @@ var ReactOwner = {
 module.exports = ReactOwner;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],136:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],188:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18080,7 +24750,7 @@ function _noMeasure(objName, fnName, func) {
 module.exports = ReactPerf;
 }).call(this,require('_process'))
 
-},{"_process":3}],137:[function(require,module,exports){
+},{"_process":3}],189:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18108,7 +24778,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = ReactPropTypeLocationNames;
 }).call(this,require('_process'))
 
-},{"_process":3}],138:[function(require,module,exports){
+},{"_process":3}],190:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18131,7 +24801,7 @@ var ReactPropTypeLocations = keyMirror({
 });
 
 module.exports = ReactPropTypeLocations;
-},{"fbjs/lib/keyMirror":212}],139:[function(require,module,exports){
+},{"fbjs/lib/keyMirror":264}],191:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18488,7 +25158,7 @@ function getClassName(propValue) {
 }
 
 module.exports = ReactPropTypes;
-},{"./ReactElement":117,"./ReactPropTypeLocationNames":137,"./getIteratorFn":180,"fbjs/lib/emptyFunction":201}],140:[function(require,module,exports){
+},{"./ReactElement":169,"./ReactPropTypeLocationNames":189,"./getIteratorFn":232,"fbjs/lib/emptyFunction":253}],192:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18640,7 +25310,7 @@ assign(ReactReconcileTransaction.prototype, Transaction.Mixin, Mixin);
 PooledClass.addPoolingTo(ReactReconcileTransaction);
 
 module.exports = ReactReconcileTransaction;
-},{"./CallbackQueue":70,"./Object.assign":87,"./PooledClass":88,"./ReactBrowserEventEmitter":91,"./ReactDOMFeatureFlags":104,"./ReactInputSelection":125,"./Transaction":165}],141:[function(require,module,exports){
+},{"./CallbackQueue":122,"./Object.assign":139,"./PooledClass":140,"./ReactBrowserEventEmitter":143,"./ReactDOMFeatureFlags":156,"./ReactInputSelection":177,"./Transaction":217}],193:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18748,7 +25418,7 @@ var ReactReconciler = {
 };
 
 module.exports = ReactReconciler;
-},{"./ReactRef":142}],142:[function(require,module,exports){
+},{"./ReactRef":194}],194:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18827,7 +25497,7 @@ ReactRef.detachRefs = function (instance, element) {
 };
 
 module.exports = ReactRef;
-},{"./ReactOwner":135}],143:[function(require,module,exports){
+},{"./ReactOwner":187}],195:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18857,7 +25527,7 @@ var ReactRootIndex = {
 };
 
 module.exports = ReactRootIndex;
-},{}],144:[function(require,module,exports){
+},{}],196:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -18881,7 +25551,7 @@ var ReactServerBatchingStrategy = {
 };
 
 module.exports = ReactServerBatchingStrategy;
-},{}],145:[function(require,module,exports){
+},{}],197:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18968,7 +25638,7 @@ module.exports = {
 };
 }).call(this,require('_process'))
 
-},{"./ReactDefaultBatchingStrategy":113,"./ReactElement":117,"./ReactInstanceHandles":126,"./ReactMarkupChecksum":129,"./ReactServerBatchingStrategy":144,"./ReactServerRenderingTransaction":146,"./ReactUpdates":148,"./instantiateReactComponent":183,"_process":3,"fbjs/lib/emptyObject":202,"fbjs/lib/invariant":209}],146:[function(require,module,exports){
+},{"./ReactDefaultBatchingStrategy":165,"./ReactElement":169,"./ReactInstanceHandles":178,"./ReactMarkupChecksum":181,"./ReactServerBatchingStrategy":196,"./ReactServerRenderingTransaction":198,"./ReactUpdates":200,"./instantiateReactComponent":235,"_process":3,"fbjs/lib/emptyObject":254,"fbjs/lib/invariant":261}],198:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -19056,7 +25726,7 @@ assign(ReactServerRenderingTransaction.prototype, Transaction.Mixin, Mixin);
 PooledClass.addPoolingTo(ReactServerRenderingTransaction);
 
 module.exports = ReactServerRenderingTransaction;
-},{"./CallbackQueue":70,"./Object.assign":87,"./PooledClass":88,"./Transaction":165,"fbjs/lib/emptyFunction":201}],147:[function(require,module,exports){
+},{"./CallbackQueue":122,"./Object.assign":139,"./PooledClass":140,"./Transaction":217,"fbjs/lib/emptyFunction":253}],199:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2015, Facebook, Inc.
@@ -19317,7 +25987,7 @@ var ReactUpdateQueue = {
 module.exports = ReactUpdateQueue;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactCurrentOwner":99,"./ReactElement":117,"./ReactInstanceMap":127,"./ReactUpdates":148,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],148:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactCurrentOwner":151,"./ReactElement":169,"./ReactInstanceMap":179,"./ReactUpdates":200,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],200:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -19544,7 +26214,7 @@ var ReactUpdates = {
 module.exports = ReactUpdates;
 }).call(this,require('_process'))
 
-},{"./CallbackQueue":70,"./Object.assign":87,"./PooledClass":88,"./ReactPerf":136,"./ReactReconciler":141,"./Transaction":165,"_process":3,"fbjs/lib/invariant":209}],149:[function(require,module,exports){
+},{"./CallbackQueue":122,"./Object.assign":139,"./PooledClass":140,"./ReactPerf":188,"./ReactReconciler":193,"./Transaction":217,"_process":3,"fbjs/lib/invariant":261}],201:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -19559,7 +26229,7 @@ module.exports = ReactUpdates;
 'use strict';
 
 module.exports = '0.14.7';
-},{}],150:[function(require,module,exports){
+},{}],202:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -19687,7 +26357,7 @@ var SVGDOMPropertyConfig = {
 };
 
 module.exports = SVGDOMPropertyConfig;
-},{"./DOMProperty":74}],151:[function(require,module,exports){
+},{"./DOMProperty":126}],203:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -19889,7 +26559,7 @@ var SelectEventPlugin = {
 };
 
 module.exports = SelectEventPlugin;
-},{"./EventConstants":79,"./EventPropagators":83,"./ReactInputSelection":125,"./SyntheticEvent":157,"./isTextInputElement":185,"fbjs/lib/ExecutionEnvironment":195,"fbjs/lib/getActiveElement":204,"fbjs/lib/keyOf":213,"fbjs/lib/shallowEqual":218}],152:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPropagators":135,"./ReactInputSelection":177,"./SyntheticEvent":209,"./isTextInputElement":237,"fbjs/lib/ExecutionEnvironment":247,"fbjs/lib/getActiveElement":256,"fbjs/lib/keyOf":265,"fbjs/lib/shallowEqual":270}],204:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -19919,7 +26589,7 @@ var ServerReactRootIndex = {
 };
 
 module.exports = ServerReactRootIndex;
-},{}],153:[function(require,module,exports){
+},{}],205:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -20510,7 +27180,7 @@ var SimpleEventPlugin = {
 module.exports = SimpleEventPlugin;
 }).call(this,require('_process'))
 
-},{"./EventConstants":79,"./EventPropagators":83,"./ReactMount":130,"./SyntheticClipboardEvent":154,"./SyntheticDragEvent":156,"./SyntheticEvent":157,"./SyntheticFocusEvent":158,"./SyntheticKeyboardEvent":160,"./SyntheticMouseEvent":161,"./SyntheticTouchEvent":162,"./SyntheticUIEvent":163,"./SyntheticWheelEvent":164,"./getEventCharCode":176,"_process":3,"fbjs/lib/EventListener":194,"fbjs/lib/emptyFunction":201,"fbjs/lib/invariant":209,"fbjs/lib/keyOf":213}],154:[function(require,module,exports){
+},{"./EventConstants":131,"./EventPropagators":135,"./ReactMount":182,"./SyntheticClipboardEvent":206,"./SyntheticDragEvent":208,"./SyntheticEvent":209,"./SyntheticFocusEvent":210,"./SyntheticKeyboardEvent":212,"./SyntheticMouseEvent":213,"./SyntheticTouchEvent":214,"./SyntheticUIEvent":215,"./SyntheticWheelEvent":216,"./getEventCharCode":228,"_process":3,"fbjs/lib/EventListener":246,"fbjs/lib/emptyFunction":253,"fbjs/lib/invariant":261,"fbjs/lib/keyOf":265}],206:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -20550,7 +27220,7 @@ function SyntheticClipboardEvent(dispatchConfig, dispatchMarker, nativeEvent, na
 SyntheticEvent.augmentClass(SyntheticClipboardEvent, ClipboardEventInterface);
 
 module.exports = SyntheticClipboardEvent;
-},{"./SyntheticEvent":157}],155:[function(require,module,exports){
+},{"./SyntheticEvent":209}],207:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -20588,7 +27258,7 @@ function SyntheticCompositionEvent(dispatchConfig, dispatchMarker, nativeEvent, 
 SyntheticEvent.augmentClass(SyntheticCompositionEvent, CompositionEventInterface);
 
 module.exports = SyntheticCompositionEvent;
-},{"./SyntheticEvent":157}],156:[function(require,module,exports){
+},{"./SyntheticEvent":209}],208:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -20626,7 +27296,7 @@ function SyntheticDragEvent(dispatchConfig, dispatchMarker, nativeEvent, nativeE
 SyntheticMouseEvent.augmentClass(SyntheticDragEvent, DragEventInterface);
 
 module.exports = SyntheticDragEvent;
-},{"./SyntheticMouseEvent":161}],157:[function(require,module,exports){
+},{"./SyntheticMouseEvent":213}],209:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -20810,7 +27480,7 @@ PooledClass.addPoolingTo(SyntheticEvent, PooledClass.fourArgumentPooler);
 module.exports = SyntheticEvent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./PooledClass":88,"_process":3,"fbjs/lib/emptyFunction":201,"fbjs/lib/warning":220}],158:[function(require,module,exports){
+},{"./Object.assign":139,"./PooledClass":140,"_process":3,"fbjs/lib/emptyFunction":253,"fbjs/lib/warning":272}],210:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -20848,7 +27518,7 @@ function SyntheticFocusEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticUIEvent.augmentClass(SyntheticFocusEvent, FocusEventInterface);
 
 module.exports = SyntheticFocusEvent;
-},{"./SyntheticUIEvent":163}],159:[function(require,module,exports){
+},{"./SyntheticUIEvent":215}],211:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -20887,7 +27557,7 @@ function SyntheticInputEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticEvent.augmentClass(SyntheticInputEvent, InputEventInterface);
 
 module.exports = SyntheticInputEvent;
-},{"./SyntheticEvent":157}],160:[function(require,module,exports){
+},{"./SyntheticEvent":209}],212:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -20973,7 +27643,7 @@ function SyntheticKeyboardEvent(dispatchConfig, dispatchMarker, nativeEvent, nat
 SyntheticUIEvent.augmentClass(SyntheticKeyboardEvent, KeyboardEventInterface);
 
 module.exports = SyntheticKeyboardEvent;
-},{"./SyntheticUIEvent":163,"./getEventCharCode":176,"./getEventKey":177,"./getEventModifierState":178}],161:[function(require,module,exports){
+},{"./SyntheticUIEvent":215,"./getEventCharCode":228,"./getEventKey":229,"./getEventModifierState":230}],213:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21047,7 +27717,7 @@ function SyntheticMouseEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticUIEvent.augmentClass(SyntheticMouseEvent, MouseEventInterface);
 
 module.exports = SyntheticMouseEvent;
-},{"./SyntheticUIEvent":163,"./ViewportMetrics":166,"./getEventModifierState":178}],162:[function(require,module,exports){
+},{"./SyntheticUIEvent":215,"./ViewportMetrics":218,"./getEventModifierState":230}],214:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21094,7 +27764,7 @@ function SyntheticTouchEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticUIEvent.augmentClass(SyntheticTouchEvent, TouchEventInterface);
 
 module.exports = SyntheticTouchEvent;
-},{"./SyntheticUIEvent":163,"./getEventModifierState":178}],163:[function(require,module,exports){
+},{"./SyntheticUIEvent":215,"./getEventModifierState":230}],215:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21155,7 +27825,7 @@ function SyntheticUIEvent(dispatchConfig, dispatchMarker, nativeEvent, nativeEve
 SyntheticEvent.augmentClass(SyntheticUIEvent, UIEventInterface);
 
 module.exports = SyntheticUIEvent;
-},{"./SyntheticEvent":157,"./getEventTarget":179}],164:[function(require,module,exports){
+},{"./SyntheticEvent":209,"./getEventTarget":231}],216:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21211,7 +27881,7 @@ function SyntheticWheelEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticMouseEvent.augmentClass(SyntheticWheelEvent, WheelEventInterface);
 
 module.exports = SyntheticWheelEvent;
-},{"./SyntheticMouseEvent":161}],165:[function(require,module,exports){
+},{"./SyntheticMouseEvent":213}],217:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -21446,7 +28116,7 @@ var Transaction = {
 module.exports = Transaction;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],166:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],218:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21474,7 +28144,7 @@ var ViewportMetrics = {
 };
 
 module.exports = ViewportMetrics;
-},{}],167:[function(require,module,exports){
+},{}],219:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -21537,7 +28207,7 @@ function accumulateInto(current, next) {
 module.exports = accumulateInto;
 }).call(this,require('_process'))
 
-},{"_process":3,"fbjs/lib/invariant":209}],168:[function(require,module,exports){
+},{"_process":3,"fbjs/lib/invariant":261}],220:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21580,7 +28250,7 @@ function adler32(data) {
 }
 
 module.exports = adler32;
-},{}],169:[function(require,module,exports){
+},{}],221:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -21608,7 +28278,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = canDefineProperty;
 }).call(this,require('_process'))
 
-},{"_process":3}],170:[function(require,module,exports){
+},{"_process":3}],222:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21664,7 +28334,7 @@ function dangerousStyleValue(name, value) {
 }
 
 module.exports = dangerousStyleValue;
-},{"./CSSProperty":68}],171:[function(require,module,exports){
+},{"./CSSProperty":120}],223:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -21716,7 +28386,7 @@ function deprecated(fnName, newModule, newPackage, ctx, fn) {
 module.exports = deprecated;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"_process":3,"fbjs/lib/warning":220}],172:[function(require,module,exports){
+},{"./Object.assign":139,"_process":3,"fbjs/lib/warning":272}],224:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21755,7 +28425,7 @@ function escapeTextContentForBrowser(text) {
 }
 
 module.exports = escapeTextContentForBrowser;
-},{}],173:[function(require,module,exports){
+},{}],225:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -21808,7 +28478,7 @@ function findDOMNode(componentOrElement) {
 module.exports = findDOMNode;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":99,"./ReactInstanceMap":127,"./ReactMount":130,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],174:[function(require,module,exports){
+},{"./ReactCurrentOwner":151,"./ReactInstanceMap":179,"./ReactMount":182,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],226:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -21860,7 +28530,7 @@ function flattenChildren(children) {
 module.exports = flattenChildren;
 }).call(this,require('_process'))
 
-},{"./traverseAllChildren":192,"_process":3,"fbjs/lib/warning":220}],175:[function(require,module,exports){
+},{"./traverseAllChildren":244,"_process":3,"fbjs/lib/warning":272}],227:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21890,7 +28560,7 @@ var forEachAccumulated = function (arr, cb, scope) {
 };
 
 module.exports = forEachAccumulated;
-},{}],176:[function(require,module,exports){
+},{}],228:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -21941,7 +28611,7 @@ function getEventCharCode(nativeEvent) {
 }
 
 module.exports = getEventCharCode;
-},{}],177:[function(require,module,exports){
+},{}],229:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22045,7 +28715,7 @@ function getEventKey(nativeEvent) {
 }
 
 module.exports = getEventKey;
-},{"./getEventCharCode":176}],178:[function(require,module,exports){
+},{"./getEventCharCode":228}],230:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22090,7 +28760,7 @@ function getEventModifierState(nativeEvent) {
 }
 
 module.exports = getEventModifierState;
-},{}],179:[function(require,module,exports){
+},{}],231:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22120,7 +28790,7 @@ function getEventTarget(nativeEvent) {
 }
 
 module.exports = getEventTarget;
-},{}],180:[function(require,module,exports){
+},{}],232:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22161,7 +28831,7 @@ function getIteratorFn(maybeIterable) {
 }
 
 module.exports = getIteratorFn;
-},{}],181:[function(require,module,exports){
+},{}],233:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22235,7 +28905,7 @@ function getNodeForCharacterOffset(root, offset) {
 }
 
 module.exports = getNodeForCharacterOffset;
-},{}],182:[function(require,module,exports){
+},{}],234:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22269,7 +28939,7 @@ function getTextContentAccessor() {
 }
 
 module.exports = getTextContentAccessor;
-},{"fbjs/lib/ExecutionEnvironment":195}],183:[function(require,module,exports){
+},{"fbjs/lib/ExecutionEnvironment":247}],235:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -22385,7 +29055,7 @@ function instantiateReactComponent(node) {
 module.exports = instantiateReactComponent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"./ReactCompositeComponent":98,"./ReactEmptyComponent":119,"./ReactNativeComponent":133,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],184:[function(require,module,exports){
+},{"./Object.assign":139,"./ReactCompositeComponent":150,"./ReactEmptyComponent":171,"./ReactNativeComponent":185,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],236:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22446,7 +29116,7 @@ function isEventSupported(eventNameSuffix, capture) {
 }
 
 module.exports = isEventSupported;
-},{"fbjs/lib/ExecutionEnvironment":195}],185:[function(require,module,exports){
+},{"fbjs/lib/ExecutionEnvironment":247}],237:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22487,7 +29157,7 @@ function isTextInputElement(elem) {
 }
 
 module.exports = isTextInputElement;
-},{}],186:[function(require,module,exports){
+},{}],238:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -22524,7 +29194,7 @@ function onlyChild(children) {
 module.exports = onlyChild;
 }).call(this,require('_process'))
 
-},{"./ReactElement":117,"_process":3,"fbjs/lib/invariant":209}],187:[function(require,module,exports){
+},{"./ReactElement":169,"_process":3,"fbjs/lib/invariant":261}],239:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22551,7 +29221,7 @@ function quoteAttributeValueForBrowser(value) {
 }
 
 module.exports = quoteAttributeValueForBrowser;
-},{"./escapeTextContentForBrowser":172}],188:[function(require,module,exports){
+},{"./escapeTextContentForBrowser":224}],240:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22568,7 +29238,7 @@ module.exports = quoteAttributeValueForBrowser;
 var ReactMount = require('./ReactMount');
 
 module.exports = ReactMount.renderSubtreeIntoContainer;
-},{"./ReactMount":130}],189:[function(require,module,exports){
+},{"./ReactMount":182}],241:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22659,7 +29329,7 @@ if (ExecutionEnvironment.canUseDOM) {
 }
 
 module.exports = setInnerHTML;
-},{"fbjs/lib/ExecutionEnvironment":195}],190:[function(require,module,exports){
+},{"fbjs/lib/ExecutionEnvironment":247}],242:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22700,7 +29370,7 @@ if (ExecutionEnvironment.canUseDOM) {
 }
 
 module.exports = setTextContent;
-},{"./escapeTextContentForBrowser":172,"./setInnerHTML":189,"fbjs/lib/ExecutionEnvironment":195}],191:[function(require,module,exports){
+},{"./escapeTextContentForBrowser":224,"./setInnerHTML":241,"fbjs/lib/ExecutionEnvironment":247}],243:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -22744,7 +29414,7 @@ function shouldUpdateReactComponent(prevElement, nextElement) {
 }
 
 module.exports = shouldUpdateReactComponent;
-},{}],192:[function(require,module,exports){
+},{}],244:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -22937,7 +29607,7 @@ function traverseAllChildren(children, callback, traverseContext) {
 module.exports = traverseAllChildren;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":99,"./ReactElement":117,"./ReactInstanceHandles":126,"./getIteratorFn":180,"_process":3,"fbjs/lib/invariant":209,"fbjs/lib/warning":220}],193:[function(require,module,exports){
+},{"./ReactCurrentOwner":151,"./ReactElement":169,"./ReactInstanceHandles":178,"./getIteratorFn":232,"_process":3,"fbjs/lib/invariant":261,"fbjs/lib/warning":272}],245:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2015, Facebook, Inc.
@@ -23304,7 +29974,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = validateDOMNesting;
 }).call(this,require('_process'))
 
-},{"./Object.assign":87,"_process":3,"fbjs/lib/emptyFunction":201,"fbjs/lib/warning":220}],194:[function(require,module,exports){
+},{"./Object.assign":139,"_process":3,"fbjs/lib/emptyFunction":253,"fbjs/lib/warning":272}],246:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -23392,7 +30062,7 @@ var EventListener = {
 module.exports = EventListener;
 }).call(this,require('_process'))
 
-},{"./emptyFunction":201,"_process":3}],195:[function(require,module,exports){
+},{"./emptyFunction":253,"_process":3}],247:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23429,7 +30099,7 @@ var ExecutionEnvironment = {
 };
 
 module.exports = ExecutionEnvironment;
-},{}],196:[function(require,module,exports){
+},{}],248:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23462,7 +30132,7 @@ function camelize(string) {
 }
 
 module.exports = camelize;
-},{}],197:[function(require,module,exports){
+},{}],249:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23503,7 +30173,7 @@ function camelizeStyleName(string) {
 }
 
 module.exports = camelizeStyleName;
-},{"./camelize":196}],198:[function(require,module,exports){
+},{"./camelize":248}],250:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23559,7 +30229,7 @@ function containsNode(_x, _x2) {
 }
 
 module.exports = containsNode;
-},{"./isTextNode":211}],199:[function(require,module,exports){
+},{"./isTextNode":263}],251:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23645,7 +30315,7 @@ function createArrayFromMixed(obj) {
 }
 
 module.exports = createArrayFromMixed;
-},{"./toArray":219}],200:[function(require,module,exports){
+},{"./toArray":271}],252:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -23733,7 +30403,7 @@ function createNodesFromMarkup(markup, handleScript) {
 module.exports = createNodesFromMarkup;
 }).call(this,require('_process'))
 
-},{"./ExecutionEnvironment":195,"./createArrayFromMixed":199,"./getMarkupWrap":205,"./invariant":209,"_process":3}],201:[function(require,module,exports){
+},{"./ExecutionEnvironment":247,"./createArrayFromMixed":251,"./getMarkupWrap":257,"./invariant":261,"_process":3}],253:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23772,7 +30442,7 @@ emptyFunction.thatReturnsArgument = function (arg) {
 };
 
 module.exports = emptyFunction;
-},{}],202:[function(require,module,exports){
+},{}],254:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -23796,7 +30466,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = emptyObject;
 }).call(this,require('_process'))
 
-},{"_process":3}],203:[function(require,module,exports){
+},{"_process":3}],255:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23823,7 +30493,7 @@ function focusNode(node) {
 }
 
 module.exports = focusNode;
-},{}],204:[function(require,module,exports){
+},{}],256:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23859,7 +30529,7 @@ function getActiveElement() /*?DOMElement*/{
 }
 
 module.exports = getActiveElement;
-},{}],205:[function(require,module,exports){
+},{}],257:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -23958,7 +30628,7 @@ function getMarkupWrap(nodeName) {
 module.exports = getMarkupWrap;
 }).call(this,require('_process'))
 
-},{"./ExecutionEnvironment":195,"./invariant":209,"_process":3}],206:[function(require,module,exports){
+},{"./ExecutionEnvironment":247,"./invariant":261,"_process":3}],258:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -23997,7 +30667,7 @@ function getUnboundedScrollPosition(scrollable) {
 }
 
 module.exports = getUnboundedScrollPosition;
-},{}],207:[function(require,module,exports){
+},{}],259:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24031,7 +30701,7 @@ function hyphenate(string) {
 }
 
 module.exports = hyphenate;
-},{}],208:[function(require,module,exports){
+},{}],260:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24071,7 +30741,7 @@ function hyphenateStyleName(string) {
 }
 
 module.exports = hyphenateStyleName;
-},{"./hyphenate":207}],209:[function(require,module,exports){
+},{"./hyphenate":259}],261:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -24125,7 +30795,7 @@ function invariant(condition, format, a, b, c, d, e, f) {
 module.exports = invariant;
 }).call(this,require('_process'))
 
-},{"_process":3}],210:[function(require,module,exports){
+},{"_process":3}],262:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24149,7 +30819,7 @@ function isNode(object) {
 }
 
 module.exports = isNode;
-},{}],211:[function(require,module,exports){
+},{}],263:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24175,7 +30845,7 @@ function isTextNode(object) {
 }
 
 module.exports = isTextNode;
-},{"./isNode":210}],212:[function(require,module,exports){
+},{"./isNode":262}],264:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -24227,7 +30897,7 @@ var keyMirror = function (obj) {
 module.exports = keyMirror;
 }).call(this,require('_process'))
 
-},{"./invariant":209,"_process":3}],213:[function(require,module,exports){
+},{"./invariant":261,"_process":3}],265:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24263,7 +30933,7 @@ var keyOf = function (oneKeyObj) {
 };
 
 module.exports = keyOf;
-},{}],214:[function(require,module,exports){
+},{}],266:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24315,7 +30985,7 @@ function mapObject(object, callback, context) {
 }
 
 module.exports = mapObject;
-},{}],215:[function(require,module,exports){
+},{}],267:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24347,7 +31017,7 @@ function memoizeStringOnly(callback) {
 }
 
 module.exports = memoizeStringOnly;
-},{}],216:[function(require,module,exports){
+},{}],268:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24371,7 +31041,7 @@ if (ExecutionEnvironment.canUseDOM) {
 }
 
 module.exports = performance || {};
-},{"./ExecutionEnvironment":195}],217:[function(require,module,exports){
+},{"./ExecutionEnvironment":247}],269:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24406,7 +31076,7 @@ if (performance.now) {
 }
 
 module.exports = performanceNow;
-},{"./performance":216}],218:[function(require,module,exports){
+},{"./performance":268}],270:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -24457,7 +31127,7 @@ function shallowEqual(objA, objB) {
 }
 
 module.exports = shallowEqual;
-},{}],219:[function(require,module,exports){
+},{}],271:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -24518,7 +31188,7 @@ function toArray(obj) {
 module.exports = toArray;
 }).call(this,require('_process'))
 
-},{"./invariant":209,"_process":3}],220:[function(require,module,exports){
+},{"./invariant":261,"_process":3}],272:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -24579,12 +31249,12 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = warning;
 }).call(this,require('_process'))
 
-},{"./emptyFunction":201,"_process":3}],221:[function(require,module,exports){
+},{"./emptyFunction":253,"_process":3}],273:[function(require,module,exports){
 'use strict';
 
 module.exports = require('./lib/React');
 
-},{"./lib/React":89}],222:[function(require,module,exports){
+},{"./lib/React":141}],274:[function(require,module,exports){
 //     Underscore.js 1.8.3
 //     http://underscorejs.org
 //     (c) 2009-2015 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
@@ -26134,7 +32804,7 @@ module.exports = require('./lib/React');
   }
 }.call(this));
 
-},{}],223:[function(require,module,exports){
+},{}],275:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -26173,7 +32843,7 @@ var dispatcher = assign(new Dispatcher(), {
 var AppDispatcher = exports.AppDispatcher = dispatcher;
 
 
-},{"flux":4,"object-assign":7}],224:[function(require,module,exports){
+},{"flux":54,"object-assign":80}],276:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -26199,7 +32869,7 @@ adapter.getData = function () {
 var GeneralAdapter = exports.GeneralAdapter = adapter;
 
 
-},{"../AppDispatcher":223,"../constants/General":226}],225:[function(require,module,exports){
+},{"../AppDispatcher":275,"../constants/General":278}],277:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -26260,7 +32930,7 @@ var store = assign({}, EventEmitter.prototype, {
 var GeneralStore = exports.GeneralStore = store;
 
 
-},{"../AppDispatcher":223,"../constants/General":226,"events":2,"object-assign":7,"underscore":222}],226:[function(require,module,exports){
+},{"../AppDispatcher":275,"../constants/General":278,"events":2,"object-assign":80,"underscore":274}],278:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -26273,7 +32943,7 @@ var eventNames = {
 var EVENTS = exports.EVENTS = eventNames;
 
 
-},{}],227:[function(require,module,exports){
+},{}],279:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -26290,6 +32960,8 @@ var _General = require('../js/adapters/General');
 var _General2 = require('../js/appStores/General');
 
 var _General3 = require('../js/constants/General');
+
+var _fdTable = require('./components/fdTable');
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -26317,14 +32989,13 @@ var PageContainer = _react2.default.createClass({
   render: function render() {
     return _react2.default.createElement(
       'div',
-      null,
+      { ref: 'mainContainer' },
       _react2.default.createElement(
-        'h1',
+        'h4',
         null,
-        'Welcome to Website Prankster'
+        'Weekly Reading List'
       ),
-      'What is your boss name? ',
-      _react2.default.createElement('input', { type: 'text', ref: 'domainInput' })
+      _react2.default.createElement(_fdTable.FDTable, { width: this.refs.mainContainer ? this.refs.mainContainer.clientWidth : 0 })
     );
   }
 });
@@ -26332,7 +33003,178 @@ var PageContainer = _react2.default.createClass({
 var IndexPage = exports.IndexPage = PageContainer;
 
 
-},{"../js/adapters/General":224,"../js/appStores/General":225,"../js/constants/General":226,"react":221}]},{},[1])
+},{"../js/adapters/General":276,"../js/appStores/General":277,"../js/constants/General":278,"./components/fdTable":280,"react":273}],280:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+function _objectWithoutProperties(obj, keys) { var target = {}; for (var i in obj) { if (keys.indexOf(i) >= 0) continue; if (!Object.prototype.hasOwnProperty.call(obj, i)) continue; target[i] = obj[i]; } return target; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var React = require('react');
+
+var _require = require('fixed-data-table');
+
+var Table = _require.Table;
+var Column = _require.Column;
+var Cell = _require.Cell;
+
+var MyTextCell = function (_React$Component) {
+  _inherits(MyTextCell, _React$Component);
+
+  function MyTextCell() {
+    _classCallCheck(this, MyTextCell);
+
+    return _possibleConstructorReturn(this, Object.getPrototypeOf(MyTextCell).apply(this, arguments));
+  }
+
+  _createClass(MyTextCell, [{
+    key: 'render',
+    value: function render() {
+      var _props = this.props;
+      var rowIndex = _props.rowIndex;
+      var field = _props.field;
+      var data = _props.data;
+
+      var props = _objectWithoutProperties(_props, ['rowIndex', 'field', 'data']);
+
+      return React.createElement(
+        Cell,
+        props,
+        data[rowIndex][field]
+      );
+    }
+  }]);
+
+  return MyTextCell;
+}(React.Component);
+
+var MyLinkCell = function (_React$Component2) {
+  _inherits(MyLinkCell, _React$Component2);
+
+  function MyLinkCell() {
+    _classCallCheck(this, MyLinkCell);
+
+    return _possibleConstructorReturn(this, Object.getPrototypeOf(MyLinkCell).apply(this, arguments));
+  }
+
+  _createClass(MyLinkCell, [{
+    key: 'render',
+    value: function render() {
+      var _props2 = this.props;
+      var rowIndex = _props2.rowIndex;
+      var field = _props2.field;
+      var data = _props2.data;
+
+      var props = _objectWithoutProperties(_props2, ['rowIndex', 'field', 'data']);
+
+      var link = data[rowIndex][field];
+      return React.createElement(
+        Cell,
+        props,
+        React.createElement(
+          'a',
+          { href: link },
+          link
+        )
+      );
+    }
+  }]);
+
+  return MyLinkCell;
+}(React.Component);
+
+var FDTable = exports.FDTable = function (_React$Component3) {
+  _inherits(FDTable, _React$Component3);
+
+  function FDTable(props) {
+    _classCallCheck(this, FDTable);
+
+    var _this3 = _possibleConstructorReturn(this, Object.getPrototypeOf(FDTable).call(this, props));
+
+    _this3.state = {
+      myTableData: [{ date: 'March 11, 2016', verses: 'Acts 5:1-2', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }]
+    };
+    return _this3;
+  }
+
+  _createClass(FDTable, [{
+    key: 'render',
+    value: function render() {
+      return React.createElement(
+        Table,
+        {
+          rowsCount: this.state.myTableData.length,
+          rowHeight: 50,
+          headerHeight: 50,
+          width: this.props.width,
+          height: 300 },
+        React.createElement(Column, {
+          header: React.createElement(
+            Cell,
+            null,
+            'Date'
+          ),
+          cell: React.createElement(MyTextCell, {
+            data: this.state.myTableData,
+            field: 'date'
+          }),
+          width: this.props.width * .25
+        }),
+        React.createElement(Column, {
+          header: React.createElement(
+            Cell,
+            null,
+            'Basic Verses'
+          ),
+          cell: React.createElement(MyLinkCell, {
+            data: this.state.myTableData,
+            field: 'verses'
+          }),
+          width: this.props.width * .25
+        }),
+        React.createElement(Column, {
+          header: React.createElement(
+            Cell,
+            null,
+            'If you want more...'
+          ),
+          cell: React.createElement(MyLinkCell, {
+            data: this.state.myTableData,
+            field: 'verses2'
+          }),
+          width: this.props.width * .25
+        }),
+        React.createElement(Column, {
+          header: React.createElement(
+            Cell,
+            null,
+            'If you are really into this...'
+          ),
+          cell: React.createElement(MyLinkCell, {
+            data: this.state.myTableData,
+            field: 'verses3'
+          }),
+          width: this.props.width * .25
+        })
+      );
+    }
+  }]);
+
+  return FDTable;
+}(React.Component);
+
+
+},{"fixed-data-table":53,"react":273}]},{},[1])
 
 
 //# sourceMappingURL=main.js.map

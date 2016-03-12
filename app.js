@@ -20,6 +20,7 @@ app.use(bodyParser.json({limit: '100mb', parameterLimit: 9000000}));
 app.use(bodyParser.urlencoded({ limit:'100mb', extended: false, parameterLimit: 9000000 }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/node_modules', express.static(path.join(__dirname, '/node_modules')));
 
 app.use('/', generalRouter);
 

@@ -2,6 +2,7 @@ import React from 'react'
 import {GeneralAdapter} from '../js/adapters/General';
 import {GeneralStore} from '../js/appStores/General';
 import {EVENTS} from '../js/constants/General';
+import {FDTable} from './components/fdTable';
 
 var PageContainer = React.createClass({
   getInitialState: function(){
@@ -24,9 +25,9 @@ var PageContainer = React.createClass({
   },
   render: function(){
     return(
-      <div>
-      <h1>Welcome to Website Prankster</h1>
-      What is your boss name? <input type="text" ref="domainInput"></input>
+      <div ref="mainContainer">
+        <h4>Weekly Reading List</h4>
+        <FDTable width={this.refs.mainContainer ? this.refs.mainContainer.clientWidth : 0}/>
       </div>
     )
   }

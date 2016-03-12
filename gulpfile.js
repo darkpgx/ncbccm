@@ -17,7 +17,6 @@ var assign = require('lodash.assign');
 var babelify = require('babelify');
 var concat = require('gulp-concat');
 
-
 // add custom browserify options here
 var customOpts = {
   entries: ['./src/js/main.js'],
@@ -28,7 +27,8 @@ var b = watchify(browserify(opts));
 
 b.transform(babelify.configure({
   presets: ["es2015", "react"],
-  compact: false
+  compact: false,
+  plugins: ["transform-object-rest-spread"]
 }));
 
 function jsCompile() {
@@ -101,3 +101,5 @@ gulp.task('lint', function () {
     // lint error, return the stream and pipe to failOnError last.
     .pipe(eslint.failOnError());
 });
+
+
