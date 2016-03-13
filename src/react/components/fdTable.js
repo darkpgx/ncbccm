@@ -1,5 +1,6 @@
 const React = require('react');
 const {Table, Column, Cell} = require('fixed-data-table');
+const TouchWrapper = require('./touchWrapper');
 
 class MyTextCell extends React.Component {
   render() {
@@ -48,7 +49,7 @@ export class FDTable extends React.Component {
         rowHeight={50}
         headerHeight={50}
         width={this.props.width}
-        height={300}>
+        height={400}>
         <Column
           header={<Cell>Date</Cell>}
           cell={
