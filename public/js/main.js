@@ -32981,7 +32981,7 @@ var FDTable = exports.FDTable = function (_React$Component3) {
     var _this3 = _possibleConstructorReturn(this, Object.getPrototypeOf(FDTable).call(this, props));
 
     _this3.state = {
-      myTableData: [{ date: 'March 11, 2016', verses: 'Acts 5:1-2', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }, { date: 'March 11, 2016', verses: '1', verses2: '2', verses3: '3' }]
+      myTableData: [{ date: 'March 14, 2016', verses: 'Deuteronomy 26:16-19', verses2: 'Galatians 5:13-14', verses3: 'Galatians 5:16-26' }, { date: 'March 15, 2016', verses: 'Galatians 6:9-10', verses2: 'Deuteronomy 28:1-6', verses3: 'Deuteronomy 28:7-19' }, { date: 'March 16, 2016', verses: 'Deuteronomy 31:5-6', verses2: 'Psalm 40:1-5', verses3: '1 Corinthians 1:8-10, 18-25' }, { date: 'March 17, 2016', verses: 'Deuteronomy 33:29', verses2: '1 Corinthians 2:9-10', verses3: '1 Corinthians 2:11-16' }, { date: 'March 18, 2016', verses: 'Joshua 1:5-9', verses2: 'Psalm 37:3-6', verses3: 'Psalm 37:7-26' }, { date: 'March 19, 2016', verses: '1 Corinthians 4:4-5', verses2: 'Joshua 3:9-11', verses3: 'Joshua 3:12-17' }, { date: 'March 20, 2016', verses: 'Joshua 7:10-12', verses2: '1 Corinthians 5:1-2', verses3: '1 Corinthians 5:6-13' }]
     };
     return _this3;
   }
