@@ -16,10 +16,10 @@ class MyTextCell extends React.Component {
 class MyLinkCell extends React.Component {
   render() {
     const {rowIndex, field, data, ...props} = this.props;
-    const link = data[rowIndex][field];
+    const link = "#/resources/"+data[rowIndex][field];
     return (
       <Cell {...props}>
-        <a href={link}>{link}</a>
+        <a href={link}>{data[rowIndex][field]}</a>
       </Cell>
     );
   }

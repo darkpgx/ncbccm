@@ -12,4 +12,13 @@ adapter.getData = function(){
   });
 };
 
+adapter.getVerses = function(verses){
+  $.get('/verses', {verses: verses}, function(data){
+    AppDispatcher.handleServerAction({
+      type: "VERSES_RECEIVED",
+      data: data
+    });
+  })
+};
+
 export const GeneralAdapter = adapter;

@@ -9,7 +9,8 @@ var _data = {
   generalData: [{
     id: 'loading...',
     name: 'loading...',
-  }]
+  }],
+  currChapter: null
 };
 
 var store = assign({}, EventEmitter.prototype, {
@@ -41,6 +42,9 @@ var store = assign({}, EventEmitter.prototype, {
         case EVENTS.GENERAL_DATA:
           _data.generalData = action.data;
           break;
+        case "VERSES_RECEIVED":
+          _data.currChapter = action.data;
+        break;
       }
       store.emitChange(action.type);
     }
