@@ -45367,7 +45367,7 @@ var FDTable = exports.FDTable = function (_React$Component3) {
           rowHeight: 50,
           headerHeight: 50,
           width: this.props.width,
-          height: 400 },
+          height: 410 },
         React.createElement(Column, {
           header: React.createElement(
             Cell,

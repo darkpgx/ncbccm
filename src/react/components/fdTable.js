@@ -49,7 +49,7 @@ export class FDTable extends React.Component {
         rowHeight={50}
         headerHeight={50}
         width={this.props.width}
-        height={400}>
+        height={410}>
         <Column
           header={<Cell>Date</Cell>}
           cell={
