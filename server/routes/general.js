@@ -16,14 +16,16 @@ router.get('/data', function(req, res){
 
 router.get('/verses', function(req, res){
   var book = req.query.verses.split(' ')[0];
+  if(book.length < 2) book = req.query.verses.split(' ')[0]+' '+req.query.verses.split(' ')[1];
   for(var i=0; i < books.length; i++){
     if(book==books[i].name){
       book = books[i].abbr;
       break;
     }
   };
+  console.log(book);
   var chapter = req.query.verses.split(' ')[1].split(':')[0];
-  var verses = req.query.verses.split(' ')[1].split(':')[1].split(',');
+  if(req.query.verses.split(' ')[0]<2) chapter = req.query.verses.split(' ')[2].split(':')[0];
   var options = {
     url: 'https://bibles.org/v2/chapters/eng-ESV:'+book+'.'+chapter+'.js',
     method: 'GET',
