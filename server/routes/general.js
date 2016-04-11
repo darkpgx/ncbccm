@@ -1,7 +1,6 @@
 var express = require('express');
 var router = express.Router();
 var bible_api_key = process.env.bible_api_key || "somekey";
-bible_api_key = "iYv93zm7EH53qdqSNQys72H4wJsQlwF6OFPnstdt";
 var request = require('request');
 var books = require('./books').books;
 
