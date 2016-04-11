@@ -31,13 +31,13 @@ export class FDTable extends React.Component {
 
     this.state = {
       myTableData: [
-        {date: 'March 21, 2016', verses: '1 Corinthians 6:9-11', verses2: '1 Corinthians 6:18-20', verses3: 'Joshua 10:8-15'},
-        {date: 'March 22, 2016', verses: '1 Corinthians 7:18-19', verses2: '1 Corinthians 7:32-35', verses3: 'Joshua 14:6-15'},
-        {date: 'March 23, 2016', verses: '1 Corinthians 8:1-3', verses2: '1 Corinthians 8:4-6', verses3: '1 Corinthians 8:7-13'},
-        {date: 'March 24, 2016', verses: '1 Corinthians 9:24-25', verses2: '1 Corinthians 9:26-27', verses3: 'Joshua 20:1-3,9'},
-        {date: 'March 25, 2016', verses: 'Joshua 21:43-45', verses2: 'Psalm 47:1-4', verses3: '1 Corinthians 10:12-14'},
-        {date: 'March 26, 2016', verses: '1 Corinthians 11:23-26', verses2: 'Joshua 23:6-11', verses3: 'Joshua 23:12-16'},
-        {date: 'March 27, 2016', verses: '1 Corinthians 12:4-7', verses2: '1 Corinthians 12:8-11', verses3: '1 Corinthians 12:12-28'}
+        {date: 'April 11, 2016', verses: '2 Corinthians 11:2-3', verses2: '2 Corinthians 11:4-5, 13-15', verses3: '1 Samuel 12:14-25'},
+        {date: 'April 12, 2016', verses: '1 Samuel 13:11-14', verses2: '2 Corinthians 12:9-10', verses3: '2 Corinthians 12:11-21'},
+        {date: 'April 13, 2016', verses: '2 Corinthians 13:11-14', verses2: '1 Samuel 14:1-7', verses3: '1 Samuel 14:8-23'},
+        {date: 'April 14, 2016', verses: 'Matthew 1:21-23', verses2: '1 Samuel 15:10-11', verses3: '1 Samuel 16:1, 7, 12-13'},
+        {date: 'April 15, 2016', verses: 'Psalm 9:1-2', verses2: 'Psalm 9:3-10', verses3: '1 Samuel 17:45-51'},
+        {date: 'April 16, 2016', verses: 'Matthew 3:16-17', verses2: 'Psalm 11:4-7', verses3: '1 Samuel 18:12-16'},
+        {date: 'April 17, 2016', verses: 'Psalm 59:9-10', verses2: 'Psalm 59:11-17', verses3: 'Matthew 4:18-24'}
       ],
     };
   }
