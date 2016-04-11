@@ -1,6 +1,7 @@
 var express = require('express');
 var router = express.Router();
 var bible_api_key = process.env.bible_api_key || "somekey";
+bible_api_key = "iYv93zm7EH53qdqSNQys72H4wJsQlwF6OFPnstdt";
 var request = require('request');
 var books = require('./books').books;
 
@@ -25,7 +26,7 @@ router.get('/verses', function(req, res){
   };
   console.log(book);
   var chapter = req.query.verses.split(' ')[1].split(':')[0];
-  if(req.query.verses.split(' ')[0]<2) chapter = req.query.verses.split(' ')[2].split(':')[0];
+  if(req.query.verses.split(' ')[0].length<2) chapter = req.query.verses.split(' ')[2].split(':')[0];
   var options = {
     url: 'https://bibles.org/v2/chapters/eng-ESV:'+book+'.'+chapter+'.js',
     method: 'GET',
@@ -34,6 +35,7 @@ router.get('/verses', function(req, res){
       'pass': 'X'
     }
   };
+  console.log(options.url);
   request(options, function(error, response, body){
     if(error) return res.json(error);
     var body = JSON.parse(body);
