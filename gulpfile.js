@@ -84,7 +84,7 @@ gulp.task('watch', function() {
   gulp.watch('./src/sass/*.scss', ['sass']);
 });
 
-gulp.task('default', ['watchServe', 'js', 'watch']);
+gulp.task('default', ['watchServe', 'sass', 'js', 'watch']);
 
 gulp.task('lint', function () {
   return gulp.src([

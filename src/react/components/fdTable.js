@@ -31,13 +31,13 @@ export class FDTable extends React.Component {
 
     this.state = {
       myTableData: [
-        {date: 'April 18, 2016', verses: 'Psalm 34:15-17', verses2: 'Psalm 34:18-22', verses3: 'Matthew 5:13-16'},
-        {date: 'April 19, 2016', verses: 'Matthew 6:9-13', verses2: 'Psalm 17:6-9', verses3: 'Psalm 17:10-15'},
-        {date: 'April 20, 2016', verses: 'Psalm 31:14-15', verses2: 'Psalm 31:16-19', verses3: 'Matthew 7:7-12'},
-        {date: 'April 21, 2016', verses: 'Psalm 57:2-3', verses2: 'Matthew 8:2-3', verses3: 'Matthew 8:5-13'},
-        {date: 'April 22, 2016', verses: 'Matthew 9:20-22', verses2: 'Psalm 63:1-5', verses3: 'Psalm 63:6-11'},
-        {date: 'April 23, 2016', verses: 'Psalm 141:8-10', verses2: 'Matthew 10:30-31', verses3: 'Matthew 10:32-42'},
-        {date: 'April 24, 2016', verses: 'Matthew 11:28-30', verses2: 'Psalm 109:21-27', verses3: 'Psalm 109:28-31'}
+        {date: 'April 25, 2016', verses: '1 Chronicles 10:13-14', verses2: 'Matthew 12:33-37', verses3: 'Matthew 12:46-50'},
+        {date: 'April 26, 2016', verses: 'Psalm 140:6-8', verses2: 'Psalm 140:9-13', verses3: 'Matthew 13:45-50'},
+        {date: 'April 27, 2016', verses: 'Psalm 142:5', verses2: 'Matthew 14:14-21', verses3: 'Matthew 14:22-36'},
+        {date: 'April 28, 2016', verses: 'Matthew 15:18-19', verses2: 'Matthew 15:22-28', verses3: 'Matthew 15:29-38'},
+        {date: 'April 29, 2016', verses: 'Psalm 139:23-24', verses2: 'Matthew 16:13-19', verses3: 'Matthew 16:20-28'},
+        {date: 'April 30, 2016', verses: 'Matthew 17:14-18', verses2: 'Matthew 17:19-27', verses3: 'Psalm 68:1-6'},
+        {date: 'May 1, 2016', verses: 'Matthew 18:2-6', verses2: 'Matthew 18:10-14', verses3: 'Matthew 18:18-22'}
       ],
     };
   }
