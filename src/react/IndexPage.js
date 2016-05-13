@@ -27,6 +27,7 @@ var PageContainer = React.createClass({
     return(
       <div ref="mainContainer">
         <h4>Weekly Reading List</h4>
+        <h3>A message to all: Your goal this week is to memorize the Lord's prayer!!! Also remember, nothing I assign to you is mandatory. Kids should be kids, go have fun! Cheers!!!</h3>
         <FDTable width={this.refs.mainContainer ? this.refs.mainContainer.clientWidth : 0}/>
       </div>
     )
