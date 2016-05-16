@@ -31,13 +31,13 @@ export class FDTable extends React.Component {
 
     this.state = {
       myTableData: [
-        {date: 'May 9, 2016', verses: 'Psalm 71:1-2', verses2: 'Psalm 71:3-8', verses3: 'Matthew 26:36-42'},
-        {date: 'May 10, 2016', verses: 'Psalm 56:3-4', verses2: 'Psalm 56:5-8', verses3: 'Psalm 56:9-13'},
-        {date: 'May 11, 2016', verses: 'Matthew 28:18-20', verses2: 'Psalm 55:12-18', verses3: 'Psalm 55:19-23'},
-        {date: 'May 12, 2016', verses: '2 Samuel 22:2-4', verses2: '1 Thessalonians 1:1-6', verses3: '1 Thessalonians 1:7-10'},
-        {date: 'May 13, 2016', verses: 'Psalm 30:4-5', verses2: '1 Thessalonians 2:4-8', verses3: '1 Thessalonians 2:9-20'},
-        {date: 'May 14, 2016', verses: '1 Chronicles 22:11-13', verses2: '1 Thessalonians 3:1-4', verses3: '1 Thessalonians 3:5-13'},
-        {date: 'May 15, 2016', verses: '1 Thessalonians 4:9-10', verses2: '1 Thessalonians 4:11-12', verses3: '1 Thessalonians 4:13-18'}
+        {date: 'May 16, 2016', verses: '1 Chronicles 28:9', verses2: '1 Thessalonians 5:14-18', verses3: 'Psalm 91'},
+        {date: 'May 17, 2016', verses: '2 Thessalonians 1:3-4', verses2: '1 Chronicles 29:13-14', verses3: 'Psalm 95'},
+        {date: 'May 18, 2016', verses: '2 Thessalonians 2:16-17', verses2: '1 Kings 3:5-14', verses3: 'Psalm 78:11-25'},
+        {date: 'May 19, 2016', verses: '2 Thessalonians 3:3-5', verses2: '2 Thessalonians 3:6-10', verses3: '2 Thessalonians 3:11-18'},
+        {date: 'May 20, 2016', verses: 'Psalm 97:10-12', verses2: '1 King 6:11-13', verses3: 'Romans 1:18-32'},
+        {date: 'May 21, 2016', verses: 'Psalm 98:1', verses2: 'Psalm 98:2-9', verses3: 'Romans 2:21-29'},
+        {date: 'May 22, 2016', verses: 'Romans 3:23-24', verses2: 'Romans 3:25-26', verses3: '1 King 8:56-61'}
       ],
     };
   }
