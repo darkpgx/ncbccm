@@ -31,13 +31,13 @@ export class FDTable extends React.Component {
 
     this.state = {
       myTableData: [
-        {date: 'May 16, 2016', verses: '1 Chronicles 28:9', verses2: '1 Thessalonians 5:14-18', verses3: 'Psalm 91'},
-        {date: 'May 17, 2016', verses: '2 Thessalonians 1:3-4', verses2: '1 Chronicles 29:13-14', verses3: 'Psalm 95'},
-        {date: 'May 18, 2016', verses: '2 Thessalonians 2:16-17', verses2: '1 Kings 3:5-14', verses3: 'Psalm 78:11-25'},
-        {date: 'May 19, 2016', verses: '2 Thessalonians 3:3-5', verses2: '2 Thessalonians 3:6-10', verses3: '2 Thessalonians 3:11-18'},
-        {date: 'May 20, 2016', verses: 'Psalm 97:10-12', verses2: '1 Kings 6:11-13', verses3: 'Romans 1:18-32'},
-        {date: 'May 21, 2016', verses: 'Psalm 98:1', verses2: 'Psalm 98:2-9', verses3: 'Romans 2:21-29'},
-        {date: 'May 22, 2016', verses: 'Romans 3:23-24', verses2: 'Romans 3:25-26', verses3: '1 Kings 8:56-61'}
+        {date: 'May 23, 2016', verses: '2 Chronicles 7:14', verses2: 'Psalm 135:1-3', verses3: 'Romans 4:18-25'},
+        {date: 'May 24, 2016', verses: 'Romans 5:6-8', verses2: 'Romans 5:9-11', verses3: 'Psalm 136:1-9'},
+        {date: 'May 25, 2016', verses: '1 Kings 11:9-11', verses2: 'Romans 6:11-14', verses3: 'Romans 6:15-23'},
+        {date: 'May 26, 2016', verses: 'Proverbs 1:7-9', verses2: 'Proverbs 1:10-16', verses3: 'Proverbs 3:1-12'},
+        {date: 'May 27, 2016', verses: 'Proverbs 6:16-19', verses2: 'Proverbs 6:20-24', verses3: 'Romans 8:1-9'},
+        {date: 'May 28, 2016', verses: 'Proverbs 9:9-10', verses2: 'Proverbs 9:11-12', verses3: 'Romans 9:14-21'},
+        {date: 'May 29, 2016', verses: 'Romans 10:8-9', verses2: 'Romans 10:10-13', verses3: 'Proverbs 12:1-13'}
       ],
     };
   }
