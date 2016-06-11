@@ -31,13 +31,13 @@ export class FDTable extends React.Component {
 
     this.state = {
       myTableData: [
-        {date: 'May 30, 2016', verses: 'Romans 11:36', verses2: 'Proverbs 15:1-5', verses3: 'Proverbs 15:6-16'},
-        {date: 'May 31, 2016', verses: 'Romans 12:2', verses2: 'Proverbs 18:1-5', verses3: 'Proverbs 18:6-24'},
-        {date: 'June 01, 2016', verses: 'Romans 13:8-9', verses2: 'Proverbs 19:1-5', verses3: 'Proverbs 19:6-29'},
-        {date: 'June 02, 2016', verses: 'Romans 14:10-12', verses2: 'Proverbs 22:1-5', verses3: 'Proverbs 22:6-29'},
-        {date: 'June 03, 2016', verses: 'Proverbs 25:21-22', verses2: 'Proverbs 27:1-2', verses3: 'Romans 15:1-7'},
-        {date: 'June 04, 2016', verses: 'Psalm 60:12', verses2: 'Proverbs 29:23-27', verses3: 'Romans 16:17-20'},
-        {date: 'June 05, 2016', verses: 'Proverbs 30:5', verses2: 'Psalm 33:18-22', verses3: 'Ephesians 1:1-14'}
+        {date: 'June 06, 2016', verses: 'Ecclesiastes 3:1,11', verses2: 'Ephesians 2:8-10', verses3: 'Psalm 45:1-7'},
+        {date: 'June 07, 2016', verses: 'Ephesians 3:20-21', verses2: 'Psalm 18:1-3', verses3: 'Ecclesiastes 5:1-7'},
+        {date: 'June 08, 2016', verses: 'Ecclesiastes 7:8-9', verses2: 'Ephesians 4:2-3', verses3: 'Ephesians 4:4-13'},
+        {date: 'June 09, 2016', verses: 'Ecclesiastes 12:13-14', verses2: 'Ephesians 5:1-2', verses3: 'Ephesians 5:3-21'},
+        {date: 'June 10, 2016', verses: 'Ephesians 6:1-3', verses2: 'Ephesians 6:10-13', verses3: 'Ephesians 6:14-24'},
+        {date: 'June 11, 2016', verses: 'Philippians 1:4-6', verses2: 'Philippians 1:7-11', verses3: 'Philippians 1:12-18'},
+        {date: 'June 12, 2016', verses: 'Philippians 2:3-4', verses2: 'Philippians 2:5-11', verses3: 'Philippians 2:12-18'}
       ],
     };
   }
