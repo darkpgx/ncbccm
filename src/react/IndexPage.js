@@ -33,7 +33,11 @@ var PageContainer = React.createClass({
             <Tab eventKey={1} title="Weekly Reading">
               <FDTable width={this.refs.mainContainer ? this.refs.mainContainer.clientWidth : 0}/>
             </Tab>
-            <Tab eventKey={2} title="Project Lord's Prayer">
+            <Tab eventKey={2} title="Daily Question">
+              <h3>June 13, 2016</h3>
+              <p>For his sake I have suffered the loss of all things and count them as rubbish, in order that I may gain Christ and be found in him, not having a righteousness of my own that comes from the (_?_), but that which comes through (_?_), the righteousness from God that depends on (_?_)</p>
+            </Tab>
+            <Tab eventKey={3} title="Project Lord's Prayer">
               Once again, everyone did a great job and pat yourself on the shoulders, you deserve it!!!
               <ResponsiveEmbed a16by9>
                 <iframe width="640" height="360" src="https://www.youtube.com/embed/P11brz45Ut0" frameborder="0" allowfullscreen></iframe>

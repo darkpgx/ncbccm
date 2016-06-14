@@ -63044,7 +63044,21 @@ var PageContainer = _react2.default.createClass({
         ),
         _react2.default.createElement(
           _reactBootstrap.Tab,
-          { eventKey: 2, title: 'Project Lord\'s Prayer' },
+          { eventKey: 2, title: 'Daily Question' },
+          _react2.default.createElement(
+            'h3',
+            null,
+            'June 13, 2016'
+          ),
+          _react2.default.createElement(
+            'p',
+            null,
+            'For his sake I have suffered the loss of all things and count them as rubbish, in order that I may gain Christ and be found in him, not having a righteousness of my own that comes from the (_?_), but that which comes through (_?_), the righteousness from God that depends on (_?_)'
+          )
+        ),
+        _react2.default.createElement(
+          _reactBootstrap.Tab,
+          { eventKey: 3, title: 'Project Lord\'s Prayer' },
           'Once again, everyone did a great job and pat yourself on the shoulders, you deserve it!!!',
           _react2.default.createElement(
             _reactBootstrap.ResponsiveEmbed,
@@ -63234,7 +63248,7 @@ var FDTable = exports.FDTable = function (_React$Component3) {
     var _this3 = _possibleConstructorReturn(this, Object.getPrototypeOf(FDTable).call(this, props));
 
     _this3.state = {
-      myTableData: [{ date: 'June 06, 2016', verses: 'Ecclesiastes 3:1,11', verses2: 'Ephesians 2:8-10', verses3: 'Psalm 45:1-7' }, { date: 'June 07, 2016', verses: 'Ephesians 3:20-21', verses2: 'Psalm 18:1-3', verses3: 'Ecclesiastes 5:1-7' }, { date: 'June 08, 2016', verses: 'Ecclesiastes 7:8-9', verses2: 'Ephesians 4:2-3', verses3: 'Ephesians 4:4-13' }, { date: 'June 09, 2016', verses: 'Ecclesiastes 12:13-14', verses2: 'Ephesians 5:1-2', verses3: 'Ephesians 5:3-21' }, { date: 'June 10, 2016', verses: 'Ephesians 6:1-3', verses2: 'Ephesians 6:10-13', verses3: 'Ephesians 6:14-24' }, { date: 'June 11, 2016', verses: 'Philippians 1:4-6', verses2: 'Philippians 1:7-11', verses3: 'Philippians 1:12-18' }, { date: 'June 12, 2016', verses: 'Philippians 2:3-4', verses2: 'Philippians 2:5-11', verses3: 'Philippians 2:12-18' }]
+      myTableData: [{ date: 'June 13, 2016', verses: 'Philippians 3:7-9', verses2: 'Philippians 3:10-14', verses3: 'Philippians 3:15-21' }, { date: 'June 14, 2016', verses: 'Philippians 4:4-7', verses2: 'Philippians 4:8-9', verses3: 'Philippians 4:10-13' }, { date: 'June 15, 2016', verses: 'Colossians 1:15-17', verses2: 'Colossians 1:18-20', verses3: 'Colossians 1:21-23' }, { date: 'June 16, 2016', verses: 'Colossians 2:13-15', verses2: '1 Kings 17:1-6', verses3: '1 Kings 17:7-16' }, { date: 'June 17, 2016', verses: 'Colossians 3:20', verses2: 'Colossians 3:23-25', verses3: '1 Kings 21:25-29' }, { date: 'June 18, 2016', verses: 'Colossians 4:2', verses2: 'Colossians 4:5-6', verses3: 'Colossians 4:7-11' }, { date: 'June 19, 2016', verses: '2 Kings 2:8', verses2: '1 Timothy 1:12-14', verses3: '1 Timothy 1:15-19' }]
     };
     return _this3;
   }
